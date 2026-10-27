@@ -1,170 +1,74 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Local Wireless LLM</title>
   <link rel="stylesheet" href="styles.css">
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      margin: 0; padding: 0; display: flex; height: 100vh;
-      background: #000000; color: #ECECEC; overflow: hidden;
-    }
-    /* Zona arrastrable de Mac */
-    .drag-region { position: absolute; top: 0; left: 0; right: 0; height: 38px; -webkit-app-region: drag; z-index: 10; }
-    
-    /* Layout principal */
-    #sidebar {
-      width: 260px; background: #0A0A0A; border-right: 1px solid #222;
-      display: flex; flex-direction: column; padding-top: 50px;
-      transition: transform 0.3s ease;
-      position: relative; z-index: 5; flex-shrink: 0;
-    }
-    #sidebar.oculto { transform: translateX(-100%); margin-right: -260px; }
-    
-    .sesion-btn { padding: 12px 20px; color: #888; cursor: pointer; border-bottom: 1px solid #111; font-size: 14px; transition: 0.2s; display: flex; justify-content: space-between; }
-    .sesion-btn:hover { color: #fff; background: #151515; }
-    .sesion-btn.activa { color: #fff; background: #1A1A1A; border-left: 3px solid #0A84FF; padding-left: 17px; }
-    
-    #main-view { flex: 1; display: flex; flex-direction: column; position: relative; min-width: 0; }
-    
-    /* Barra superior con Modelo Activo */
-    #top-bar {
-      height: 48px; border-bottom: 1px solid #1A1A1A; display: flex; align-items: center;
-      justify-content: space-between; padding: 0 20px 0 120px; -webkit-app-region: drag;
-      background: rgba(10,10,10,0.8); backdrop-filter: blur(10px); z-index: 15;
-    }
-    #toggle-sidebar {
-      position: absolute; top: 12px; left: 80px; z-index: 20; -webkit-app-region: no-drag;
-      background: none; border: none; color: #888; cursor: pointer; font-size: 18px;
-    }
-    #toggle-sidebar:hover { color: #fff; }
-
-    /* Selector de Modelos */
-    .model-selector-container {
-      display: flex; align-items: center; gap: 8px; -webkit-app-region: no-drag;
-    }
-    .model-badge {
-      background: #161616; border: 1px solid #2A2A2A; color: #AAA; font-size: 11px;
-      padding: 3px 8px; border-radius: 12px; font-weight: 500; display: flex; align-items: center; gap: 6px;
-    }
-    .model-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: #30D158; }
-    select#select-modelo {
-      background: #141414; color: #ECECEC; border: 1px solid #2C2C2C; border-radius: 8px;
-      padding: 5px 12px; font-size: 13px; font-weight: 500; outline: none; cursor: pointer;
-      transition: border-color 0.2s, background 0.2s;
-    }
-    select#select-modelo:hover { border-color: #0A84FF; background: #1B1B1B; }
-    select#select-modelo:focus { border-color: #0A84FF; }
-
-    /* Chat y Mensajes */
-    #chat-wrapper { flex: 1; overflow-y: auto; display: flex; justify-content: center; }
-    #chat { width: 100%; max-width: 900px; padding: 25px 40px 20px; display: flex; flex-direction: column; gap: 16px; }
-    .mensaje { padding: 14px 18px; border-radius: 12px; max-width: 85%; line-height: 1.6; position: relative; font-size: 15px; word-wrap: break-word; }
-    .yo { background: #1A1A1A; align-self: flex-end; cursor: pointer; border: 1px solid #333; transition: border 0.2s; }
-    .yo:hover { border-color: #555; }
-    .yo::after { content: '✎'; position: absolute; right: -25px; top: 12px; font-size: 11px; color: #666; opacity: 0; transition: opacity 0.2s; }
-    .yo:hover::after { opacity: 1; }
-    .ia { background: #000; align-self: flex-start; border-left: 3px solid #333; padding-left: 20px; white-space: pre-wrap; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; }
-    
-    /* Controles inferiores */
-    #input-container { padding: 20px 40px; background: rgba(0,0,0,0.9); display: flex; gap: 10px; align-items: flex-end; justify-content: center; }
-    #input-inner { display: flex; gap: 10px; width: 100%; max-width: 900px; }
-    #btn-archivo {
-      background: #1A1A1A; border: 1px solid #333; color: #fff; width: 45px; height: 45px;
-      border-radius: 8px; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-    }
-    #btn-archivo:hover { background: #2A2A2A; border-color: #555; }
-    
-    .input-wrapper { flex: 1; position: relative; display: flex; }
-    textarea {
-      width: 100%; padding: 14px 50px 14px 14px; border-radius: 8px; border: 1px solid #333;
-      background: #0A0A0A; color: white; outline: none; font-size: 15px; resize: none;
-      min-height: 20px; max-height: 180px; overflow-y: auto; font-family: inherit; line-height: 1.5;
-    }
-    textarea:focus { border-color: #555; }
-    
-    #btn-stop {
-      position: absolute; right: 8px; bottom: 8px; background: #FF3B30; color: white;
-      border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: bold;
-      cursor: pointer; display: none;
-    }
-
-    /* Slash Commands Popup */
-    #slash-popup {
-      display: none; position: absolute; bottom: 100%; left: 0; right: 0; margin-bottom: 6px;
-      background: #111; border: 1px solid #333; border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.7);
-      overflow: hidden; z-index: 200; max-height: 280px; overflow-y: auto;
-    }
-    #slash-popup.visible { display: block; }
-    .slash-item {
-      padding: 10px 16px; cursor: pointer; border-left: 3px solid transparent; transition: 0.1s;
-    }
-    .slash-item:hover, .slash-item.selected {
-      background: #1E1E1E; border-left-color: #0A84FF;
-    }
-    .slash-item-cmd { font-weight: bold; color: #FFFFFF; font-size: 14px; }
-    .slash-item-badge { background: #0A84FF22; color: #0A84FF; font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-left: 6px; text-transform: uppercase; font-weight: 700; }
-    .slash-item-args { color: #777; font-size: 13px; margin-left: 6px; }
-    .slash-item-desc { color: #555; font-size: 12px; margin-top: 3px; }
-
-    /* Drag & Drop Overlay */
-    #drop-overlay {
-      position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85);
-      z-index: 100; display: none; align-items: center; justify-content: center;
-      border: 2px dashed #0A84FF; margin: 20px; border-radius: 16px;
-    }
-    #drop-overlay.drag-active { display: flex; }
-    #drop-overlay p { font-size: 24px; color: #0A84FF; font-weight: bold; }
-  </style>
 </head>
 <body>
+  <!-- Área de arrastre nativa de macOS -->
   <div class="drag-region"></div>
   
-  <!-- Panel de Sesiones -->
-  <div id="sidebar">
-    <div style="padding: 0 20px 15px; display: flex; justify-content: space-between; align-items: center;">
-      <span style="color: #666; font-weight: bold; font-size: 12px; letter-spacing: 1px; text-transform: uppercase;">Chats</span>
-      <button id="btn-nueva-sesion" style="background: none; border: none; color: #0A84FF; cursor: pointer; font-size: 22px; padding: 0; line-height: 1;">+</button>
+  <!-- Sidebar estilo Finder / Apple Notes -->
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-title">Conversaciones</span>
+      <button id="btn-nueva-sesion" class="btn-icon-subtle" title="Nueva conversación">＋</button>
     </div>
     <div id="lista-sesiones"></div>
-  </div>
+  </aside>
 
   <!-- Vista Principal -->
-  <div id="main-view">
-    <button id="toggle-sidebar">☰</button>
-
-    <!-- Barra Superior: Selector de Modelos -->
-    <div id="top-bar">
-      <div style="font-size: 12px; color: #555; font-weight: 600; letter-spacing: 0.5px;">LOCAL WIRELESS LLM</div>
-      <div class="model-selector-container">
-        <div class="model-badge"><span class="dot"></span> Online</div>
-        <select id="select-modelo">
-          <option value="">Cargando modelos...</option>
-        </select>
+  <main id="main-view">
+    <!-- Barra de Herramientas Unificada -->
+    <header id="top-bar">
+      <div class="toolbar-left">
+        <button id="toggle-sidebar" title="Alternar barra lateral">◫</button>
+        <span class="app-branding">Wireless LLM</span>
       </div>
-    </div>
 
-    <div id="drop-overlay"><p>Suelta el archivo aquí para leerlo</p></div>
+      <!-- Selector de Modelos Estilo Apple Pill -->
+      <div class="model-selector-container">
+        <div class="model-pill">
+          <span class="status-dot"></span>
+          <select id="select-modelo" title="Cambiar modelo activo">
+            <option value="">Conectando con Ollama...</option>
+          </select>
+        </div>
+      </div>
+    </header>
+
+    <!-- Overlay de Drag & Drop -->
+    <div id="drop-overlay">
+      <p>Suelta el archivo para cargarlo en el contexto</p>
+    </div>
     
+    <!-- Canvas del Chat -->
     <div id="chat-wrapper">
       <div id="chat"></div>
     </div>
     
-    <div id="input-container">
+    <!-- Isla Flotante de Entrada (Estilo Spotlight / Siri) -->
+    <footer id="input-container">
       <div id="input-inner">
-        <button id="btn-archivo">+</button>
-        <div class="input-wrapper">
-          <div id="slash-popup"></div>
-          <textarea id="prompt" rows="1" placeholder="Escribe / para ver comandos y skills..."></textarea>
-          <button id="btn-stop">Detener ⏹</button>
+        <!-- Menú Emergente de Slash Commands y Skills -->
+        <div id="slash-popup"></div>
+
+        <div class="input-island">
+          <button id="btn-archivo" title="Cargar archivo o carpeta local">＋</button>
+          <div class="input-wrapper">
+            <textarea id="prompt" rows="1" placeholder="Escribe un mensaje o presiona / para comandos y skills..."></textarea>
+            <button id="btn-stop">Detener</button>
+          </div>
         </div>
       </div>
-    </div>
-  </div>
+    </footer>
+  </main>
 
 <script>
   const chat = document.getElementById('chat');
+  const chatWrapper = document.getElementById('chat-wrapper');
   const input = document.getElementById('prompt');
   const btnStop = document.getElementById('btn-stop');
   const btnArchivo = document.getElementById('btn-archivo');
@@ -176,26 +80,29 @@
   const slashPopup = document.getElementById('slash-popup');
   const selectModelo = document.getElementById('select-modelo');
   
-  // ESTADO DE SESIONES
+  // Estado de Sesiones
   let sesiones = [{ id: 1, titulo: 'Chat Principal', mensajes: [] }];
   let sesionActivaId = 1;
   let currentIaMessage = null;
   let estaGenerando = false;
 
-  // COMANDOS BASE
-  let COMANDOS_BASE = [
-    { cmd: '/lee',        args: '<archivo|carpeta>',      desc: 'Lee archivo o carpeta y lo inyecta como contexto', tipo: 'cmd' },
-    { cmd: '/lee-repo',   args: '[pregunta]',              desc: 'Carga todo el repositorio actual como contexto', tipo: 'cmd' },
-    { cmd: '/lee-carpeta',args: '<directorio>',            desc: 'Carga una carpeta completa como contexto', tipo: 'cmd' },
-    { cmd: '/edita',      args: '<archivo> <instrucción>', desc: 'Edita un archivo y guarda los cambios en disco', tipo: 'cmd' },
-    { cmd: '/edita-repo', args: '<instrucción>',           desc: 'Edita múltiples archivos del repo de forma autónoma', tipo: 'cmd' },
+  // Comandos del Sistema
+  const COMANDOS_SISTEMA = [
+    { cmd: '/lee',        args: '<archivo|carpeta>',      desc: 'Inyecta un archivo o carpeta en el contexto', tipo: 'cmd' },
+    { cmd: '/lee-repo',   args: '[pregunta]',              desc: 'Carga el árbol de código completo del proyecto', tipo: 'cmd' },
+    { cmd: '/lee-carpeta',args: '<directorio>',            desc: 'Analiza recursivamente un directorio local', tipo: 'cmd' },
+    { cmd: '/edita',      args: '<archivo> <instrucción>', desc: 'Modifica y sobreescribe un archivo en disco', tipo: 'cmd' },
+    { cmd: '/edita-repo', args: '<instrucción>',           desc: 'Modificación autónoma multi-archivo (JSON)', tipo: 'cmd' },
   ];
 
-  let listaComandosYSkills = [...COMANDOS_BASE];
+  let catalogoComandos = [...COMANDOS_SISTEMA];
   let selectedIndex = -1;
   let filteredCommands = [];
 
-  // CARGAR MODELOS DESDE OLLAMA
+  // =========================================================================
+  // Inicialización de Modelos y Skills desde el Backend
+  // =========================================================================
+
   async function inicializarModelos() {
     try {
       const data = await window.api.obtenerModelos();
@@ -213,18 +120,13 @@
       selectModelo.addEventListener('change', async (e) => {
         const nuevo = e.target.value;
         await window.api.cambiarModelo(nuevo);
-        // Notificar en el chat
-        const sesionActual = sesiones.find(s => s.id === sesionActivaId);
-        const aviso = `⚡ Modelo cambiado a: ${nuevo}`;
-        sesionActual.mensajes.push({ rol: 'ia', texto: aviso });
-        crearBurbujaDOM('ia', aviso);
+        agregarBurbujaSistema(`⚡ Modelo cambiado a: ${nuevo}`);
       });
     } catch (err) {
-      console.error("Error obteniendo modelos:", err);
+      console.error("Error al conectar con modelos:", err);
     }
   }
 
-  // CARGAR SKILLS DINÁMICAMENTE DESDE skills/
   async function inicializarSkills() {
     try {
       const skills = await window.api.obtenerSkills();
@@ -234,11 +136,15 @@
         desc: s.descripcion,
         tipo: 'skill'
       }));
-      listaComandosYSkills = [...COMANDOS_BASE, ...skillsMapeadas];
+      catalogoComandos = [...COMANDOS_SISTEMA, ...skillsMapeadas];
     } catch (err) {
-      console.error("Error obteniendo skills:", err);
+      console.error("Error al obtener skills:", err);
     }
   }
+
+  // =========================================================================
+  // Slash Commands & PopUp Flotante Estilo macOS
+  // =========================================================================
 
   function getSlashToken(value) {
     const match = value.match(/^(\/\S*)/);
@@ -254,7 +160,7 @@
       return;
     }
 
-    filteredCommands = listaComandosYSkills.filter(c => c.cmd.startsWith(token));
+    filteredCommands = catalogoComandos.filter(c => c.cmd.startsWith(token));
 
     if (filteredCommands.length === 0) {
       ocultarPopup();
@@ -275,8 +181,10 @@
       
       const badge = c.tipo === 'skill' ? '<span class="slash-item-badge">SKILL</span>' : '';
       item.innerHTML =
-        '<div><span class="slash-item-cmd">' + c.cmd + '</span>' + badge +
-        '<span class="slash-item-args">' + c.args + '</span></div>' +
+        '<div class="slash-item-header">' +
+          '<span class="slash-item-cmd">' + c.cmd + '</span>' + badge +
+          '<span class="slash-item-args">' + c.args + '</span>' +
+        '</div>' +
         '<div class="slash-item-desc">' + c.desc + '</div>';
         
       item.addEventListener('mousedown', (e) => {
@@ -299,11 +207,18 @@
     input.value = filteredCommands[index].cmd + ' ';
     ocultarPopup();
     input.focus();
-    input.style.height = 'auto';
-    input.style.height = input.scrollHeight + 'px';
+    ajustarAlturaTextarea();
   }
 
-  // Sesiones
+  function ajustarAlturaTextarea() {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 180) + 'px';
+  }
+
+  // =========================================================================
+  // Manejo de Sesiones
+  // =========================================================================
+
   function actualizarSidebar() {
     listaSesiones.innerHTML = '';
     sesiones.forEach((sesion) => {
@@ -322,37 +237,79 @@
     chat.innerHTML = '';
     const sesionActual = sesiones.find(s => s.id === sesionActivaId);
     sesionActual.mensajes.forEach(msg => crearBurbujaDOM(msg.rol, msg.texto));
-    chat.scrollTop = chat.scrollHeight;
+    scrollAbajo();
   }
 
   btnNuevaSesion.addEventListener('click', () => {
     if (estaGenerando) return;
     const nuevaId = Date.now();
-    sesiones.unshift({ id: nuevaId, titulo: `Chat ${sesiones.length + 1}`, mensajes: [] });
+    sesiones.unshift({ id: nuevaId, titulo: `Conversación ${sesiones.length + 1}`, mensajes: [] });
     cambiarSesion(nuevaId);
   });
 
   btnToggle.addEventListener('click', () => sidebar.classList.toggle('oculto'));
 
+  // =========================================================================
+  // Renderizado de Mensajes y Formato
+  // =========================================================================
+
+  function formatearMarkdownSimple(texto) {
+    // Escapar tags HTML básicos para seguridad
+    let out = texto
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
+    // Bloques de código con triple backtick
+    out = out.replace(/```([a-zA-Z0-9_-]*)\r?\n([\s\S]*?)```/g, (match, lang, code) => {
+      return `<pre><code>${code.trim()}</code></pre>`;
+    });
+
+    // Código inline con backtick simple
+    out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    // Negrita
+    out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+    return out;
+  }
+
   function crearBurbujaDOM(clase, texto) {
     const div = document.createElement('div');
     div.className = `mensaje ${clase}`;
-    div.innerText = texto;
-    
+
     if (clase === 'yo') {
+      div.innerText = texto;
       div.addEventListener('click', () => {
         if (!estaGenerando) {
           input.value = div.innerText;
           input.focus();
+          ajustarAlturaTextarea();
         }
       });
+    } else {
+      div.innerHTML = formatearMarkdownSimple(texto);
     }
+    
     chat.appendChild(div);
-    chat.scrollTop = chat.scrollHeight;
+    scrollAbajo();
     return div;
   }
 
-  // Teclado y Envío
+  function agregarBurbujaSistema(aviso) {
+    const sesionActual = sesiones.find(s => s.id === sesionActivaId);
+    sesionActual.mensajes.push({ rol: 'ia', texto: aviso });
+    crearBurbujaDOM('ia', aviso);
+  }
+
+  function scrollAbajo() {
+    chatWrapper.scrollTop = chatWrapper.scrollHeight;
+  }
+
+  // =========================================================================
+  // Interacción de Teclado y Envío
+  // =========================================================================
+
   input.addEventListener('keydown', (e) => {
     if (slashPopup.classList.contains('visible')) {
       if (e.key === 'ArrowDown') {
@@ -400,24 +357,30 @@
     window.api.enviarMensaje(texto.trim());
     
     input.value = '';
-    input.style.height = 'auto';
+    ajustarAlturaTextarea();
     estaGenerando = true;
     btnStop.style.display = 'block';
     ocultarPopup();
     
-    if (sesionActual.titulo.startsWith('Chat') && sesionActual.mensajes.length <= 2) {
+    // Auto-renombrar si es conversación nueva
+    if (sesionActual.titulo.startsWith('Conversación') && sesionActual.mensajes.length <= 2) {
       sesionActual.titulo = texto.split(' ').slice(0, 3).join(' ') + '...';
       actualizarSidebar();
     }
   }
 
-  // Streaming
+  // =========================================================================
+  // Eventos de Streaming de la IA
+  // =========================================================================
+
   window.api.onStream((chunk) => {
     if (currentIaMessage) {
-      currentIaMessage.innerText += chunk;
-      chat.scrollTop = chat.scrollHeight;
       const sesionActual = sesiones.find(s => s.id === sesionActivaId);
-      sesionActual.mensajes[sesionActual.mensajes.length - 1].texto += chunk;
+      const ultimoMsg = sesionActual.mensajes[sesionActual.mensajes.length - 1];
+      ultimoMsg.texto += chunk;
+      
+      currentIaMessage.innerHTML = formatearMarkdownSimple(ultimoMsg.texto);
+      scrollAbajo();
     }
   });
 
@@ -432,9 +395,8 @@
     btnStop.style.display = 'none';
   });
 
-  input.addEventListener('input', function() {
-    this.style.height = 'auto';
-    this.style.height = (this.scrollHeight) + 'px';
+  input.addEventListener('input', () => {
+    ajustarAlturaTextarea();
     actualizarPopup();
   });
 
@@ -442,23 +404,40 @@
     setTimeout(() => ocultarPopup(), 150);
   });
 
+  // Diálogo nativo y Drag & Drop
   btnArchivo.addEventListener('click', async () => {
     const ruta = await window.api.seleccionarArchivo();
-    if (ruta) { input.value = `lee "${ruta}" `; input.focus(); }
-  });
-
-  window.addEventListener('dragover', (e) => { e.preventDefault(); dropOverlay.classList.add('drag-active'); });
-  window.addEventListener('dragleave', (e) => { if (e.clientX === 0 || e.clientY === 0) dropOverlay.classList.remove('drag-active'); });
-  window.addEventListener('drop', (e) => {
-    e.preventDefault(); dropOverlay.classList.remove('drag-active');
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      const ruta = (window.api && window.api.obtenerRutaArchivo) ? window.api.obtenerRutaArchivo(file) : file.path;
-      if (ruta) { input.value = `lee "${ruta}" `; input.focus(); }
+    if (ruta) {
+      input.value = `lee "${ruta}" `;
+      input.focus();
+      ajustarAlturaTextarea();
     }
   });
 
-  // Inicio
+  window.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropOverlay.classList.add('drag-active');
+  });
+
+  window.addEventListener('dragleave', (e) => {
+    if (e.clientX === 0 || e.clientY === 0) dropOverlay.classList.remove('drag-active');
+  });
+
+  window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropOverlay.classList.remove('drag-active');
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      const ruta = (window.api && window.api.obtenerRutaArchivo) ? window.api.obtenerRutaArchivo(file) : file.path;
+      if (ruta) {
+        input.value = `lee "${ruta}" `;
+        input.focus();
+        ajustarAlturaTextarea();
+      }
+    }
+  });
+
+  // Inicialización
   actualizarSidebar();
   inicializarModelos();
   inicializarSkills();

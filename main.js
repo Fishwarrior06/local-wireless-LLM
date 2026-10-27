@@ -16,10 +16,16 @@ let abortController = null;
 
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 1100,
-        height: 780,
+        width: 1140,
+        height: 800,
+        minWidth: 840,
+        minHeight: 560,
         titleBarStyle: 'hiddenInset',
-        backgroundColor: '#000000',
+        trafficLightPosition: { x: 18, y: 18 },
+        vibrancy: 'under-window',
+        visualEffectState: 'active',
+        transparent: true,
+        backgroundColor: '#00000000',
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true
