@@ -10,11 +10,11 @@
   <!-- Área de arrastre nativa de macOS -->
   <div class="drag-region"></div>
   
-  <!-- Sidebar estilo Finder / Apple Notes -->
+  <!-- Sidebar estilo Finder / Antigravity Explorer -->
   <aside id="sidebar">
     <div class="sidebar-header">
-      <span class="sidebar-title">Conversaciones</span>
-      <button id="btn-nueva-sesion" class="btn-icon-subtle" title="Nueva conversación">＋</button>
+      <span class="sidebar-title">✦ CONVERSACIONES</span>
+      <button id="btn-nueva-sesion" class="btn-icon-subtle" title="Nueva sesión">＋</button>
     </div>
     <div id="lista-sesiones"></div>
   </aside>
@@ -25,14 +25,17 @@
     <header id="top-bar">
       <div class="toolbar-left">
         <button id="toggle-sidebar" title="Alternar barra lateral">◫</button>
-        <span class="app-branding">Wireless LLM</span>
+        <div class="app-branding">
+          <span class="brand-gradient">ANTIGRAVITY</span>
+          <span style="color: var(--text-tertiary); font-size: 11px;">/ LOCAL</span>
+        </div>
       </div>
 
-      <!-- Selector de Modelos Estilo Apple Pill -->
+      <!-- Selector de Modelos Antigravity Capsule -->
       <div class="model-selector-container">
         <div class="model-pill">
           <span class="status-dot"></span>
-          <select id="select-modelo" title="Cambiar modelo activo">
+          <select id="select-modelo" title="Seleccionar modelo de inferencia">
             <option value="">Conectando con Ollama...</option>
           </select>
         </div>
@@ -41,7 +44,7 @@
 
     <!-- Overlay de Drag & Drop -->
     <div id="drop-overlay">
-      <p>Suelta el archivo para cargarlo en el contexto</p>
+      <p>✦ Suelta el archivo o carpeta para adjuntar al contexto</p>
     </div>
     
     <!-- Canvas del Chat -->
@@ -49,17 +52,17 @@
       <div id="chat"></div>
     </div>
     
-    <!-- Isla Flotante de Entrada (Estilo Spotlight / Siri) -->
+    <!-- Isla Flotante de Entrada estilo Spotlight / Agent Dock -->
     <footer id="input-container">
       <div id="input-inner">
         <!-- Menú Emergente de Slash Commands y Skills -->
         <div id="slash-popup"></div>
 
         <div class="input-island">
-          <button id="btn-archivo" title="Cargar archivo o carpeta local">＋</button>
+          <button id="btn-archivo" title="Adjuntar archivo o carpeta local">＋</button>
           <div class="input-wrapper">
-            <textarea id="prompt" rows="1" placeholder="Escribe un mensaje o presiona / para comandos y skills..."></textarea>
-            <button id="btn-stop">Detener</button>
+            <textarea id="prompt" rows="1" placeholder="Haz una pregunta o presiona / para skills y comandos..."></textarea>
+            <button id="btn-stop">Detener ⏹</button>
           </div>
         </div>
       </div>
@@ -100,7 +103,7 @@
   let filteredCommands = [];
 
   // =========================================================================
-  // Inicialización de Modelos y Skills desde el Backend
+  // Inicialización de Modelos y Skills
   // =========================================================================
 
   async function inicializarModelos() {
@@ -120,7 +123,7 @@
       selectModelo.addEventListener('change', async (e) => {
         const nuevo = e.target.value;
         await window.api.cambiarModelo(nuevo);
-        agregarBurbujaSistema(`⚡ Modelo cambiado a: ${nuevo}`);
+        agregarBurbujaSistema(`⚡ Modelo conmutado a: ${nuevo}`);
       });
     } catch (err) {
       console.error("Error al conectar con modelos:", err);
@@ -143,7 +146,7 @@
   }
 
   // =========================================================================
-  // Slash Commands & PopUp Flotante Estilo macOS
+  // Slash Commands & PopUp Flotante
   // =========================================================================
 
   function getSlashToken(value) {
@@ -216,7 +219,7 @@
   }
 
   // =========================================================================
-  // Manejo de Sesiones
+  // Sesiones
   // =========================================================================
 
   function actualizarSidebar() {
@@ -243,36 +246,63 @@
   btnNuevaSesion.addEventListener('click', () => {
     if (estaGenerando) return;
     const nuevaId = Date.now();
-    sesiones.unshift({ id: nuevaId, titulo: `Conversación ${sesiones.length + 1}`, mensajes: [] });
+    sesiones.unshift({ id: nuevaId, titulo: `Sesión ${sesiones.length + 1}`, mensajes: [] });
     cambiarSesion(nuevaId);
   });
 
   btnToggle.addEventListener('click', () => sidebar.classList.toggle('oculto'));
 
   // =========================================================================
-  // Renderizado de Mensajes y Formato
+  // Renderizado Markdown y Antigravity Artifacts
   // =========================================================================
 
   function formatearMarkdownSimple(texto) {
-    // Escapar tags HTML básicos para seguridad
     let out = texto
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
 
-    // Bloques de código con triple backtick
+    // Chips especiales para Skills activadas o lecturas de archivos
+    out = out.replace(/⚡ \[Skill activada: ([^\]]+)\]/g, '<div class="callout-pill">✦ SKILL: $1</div>');
+    out = out.replace(/\[Mac: ([^\]]+)\]/g, '<div class="callout-pill" style="border-color: rgba(0,229,255,0.4); color: #80DEEA;">✦ CONTEXTO: $1</div>');
+
+    // Bloques de código como Artifacts con botón de copiar
     out = out.replace(/```([a-zA-Z0-9_-]*)\r?\n([\s\S]*?)```/g, (match, lang, code) => {
-      return `<pre><code>${code.trim()}</code></pre>`;
+      const lenguaje = lang || 'código';
+      const cleanCode = code.trim();
+      return `
+        <div class="code-artifact">
+          <div class="code-header">
+            <span>${lenguaje}</span>
+            <button class="btn-copy" onclick="copiarAlPortapapeles(this)">Copiar</button>
+          </div>
+          <pre><code>${cleanCode}</code></pre>
+        </div>
+      `;
     });
 
-    // Código inline con backtick simple
+    // Código inline
     out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
-
     // Negrita
     out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
 
     return out;
   }
+
+  // Función global para copiar código
+  window.copiarAlPortapapeles = (btn) => {
+    const pre = btn.closest('.code-artifact').querySelector('pre code');
+    if (pre) {
+      navigator.clipboard.writeText(pre.innerText);
+      const original = btn.innerText;
+      btn.innerText = 'Copiado ✓';
+      btn.style.color = '#30D158';
+      setTimeout(() => {
+        btn.innerText = original;
+        btn.style.color = '';
+      }, 1500);
+    }
+  };
 
   function crearBurbujaDOM(clase, texto) {
     const div = document.createElement('div');
@@ -362,15 +392,14 @@
     btnStop.style.display = 'block';
     ocultarPopup();
     
-    // Auto-renombrar si es conversación nueva
-    if (sesionActual.titulo.startsWith('Conversación') && sesionActual.mensajes.length <= 2) {
+    if (sesionActual.titulo.startsWith('Sesión') && sesionActual.mensajes.length <= 2) {
       sesionActual.titulo = texto.split(' ').slice(0, 3).join(' ') + '...';
       actualizarSidebar();
     }
   }
 
   // =========================================================================
-  // Eventos de Streaming de la IA
+  // Streaming de la IA
   // =========================================================================
 
   window.api.onStream((chunk) => {
@@ -404,7 +433,7 @@
     setTimeout(() => ocultarPopup(), 150);
   });
 
-  // Diálogo nativo y Drag & Drop
+  // Diálogo y Drag & Drop
   btnArchivo.addEventListener('click', async () => {
     const ruta = await window.api.seleccionarArchivo();
     if (ruta) {
@@ -437,7 +466,7 @@
     }
   });
 
-  // Inicialización
+  // Inicio
   actualizarSidebar();
   inicializarModelos();
   inicializarSkills();
