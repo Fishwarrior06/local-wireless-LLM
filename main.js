@@ -40,9 +40,23 @@ function createWindow() {
         backgroundColor: '#00000000',
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
-            contextIsolation: true
+            contextIsolation: true,
+            devTools: false // Bloquea el inspector DevTools
         }
     });
+
+    // Desactivar menú por defecto y atajos de inspección en producción
+    mainWindow.removeMenu();
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+        // Bloquea Cmd+Alt+I (Mac), F12, Ctrl+Shift+I (Windows/Linux)
+        if (
+            (input.key.toLowerCase() === 'i' && (input.meta || input.control) && input.alt) ||
+            input.key === 'F12'
+        ) {
+            event.preventDefault();
+        }
+    });
+
     mainWindow.loadFile(path.join(__dirname, 'ui', 'index.html'));
 }
 
@@ -87,10 +101,10 @@ ipcMain.handle('test-conexion-ollama', async (event, hostAProbar) => {
     }
 });
 
-// Guardar IP confirmada por el usuario
-ipcMain.handle('guardar-config-ip', async (event, { host, model }) => {
-    config.guardarConfig({ host, model });
-    return { success: true, host: config.ollamaHost, model: config.currentModel };
+// Guardar configuración confirmada por el usuario (IP, modelo, idioma)
+ipcMain.handle('guardar-config-ip', async (event, { host, model, language }) => {
+    config.guardarConfig({ host, model, language });
+    return { success: true, host: config.ollamaHost, model: config.currentModel, language: config.language };
 });
 
 // Obtener lista de modelos de Ollama
@@ -99,7 +113,8 @@ ipcMain.handle('obtener-modelos', async () => {
     return {
         modelos,
         modeloActual: config.currentModel,
-        hostActual: config.ollamaHost
+        hostActual: config.ollamaHost,
+        language: config.language
     };
 });
 

@@ -3,18 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Local Wireless LLM</title>
+  <title>Wireless LLM</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <!-- Área de arrastre nativa de macOS -->
   <div class="drag-region"></div>
   
-  <!-- Sidebar estilo Finder / Antigravity Explorer -->
+  <!-- Sidebar estilo Finder / Apple Notes -->
   <aside id="sidebar">
     <div class="sidebar-header">
-      <span class="sidebar-title">✦ CONVERSACIONES</span>
-      <button id="btn-nueva-sesion" class="btn-icon-subtle" title="Nueva sesión">＋</button>
+      <span class="sidebar-title" data-i18n="conversationsTitle">CONVERSACIONES</span>
+      <button id="btn-nueva-sesion" class="btn-icon-subtle" title="Nueva conversación">＋</button>
     </div>
     <div id="lista-sesiones"></div>
   </aside>
@@ -30,44 +30,21 @@
         </div>
       </div>
 
-      <!-- Selector de Modelos y Ajustes -->
+      <!-- Selector de Modelos y Botón de Ajustes -->
       <div class="model-selector-container">
         <div class="model-pill">
           <span class="status-dot"></span>
-          <select id="select-modelo" title="Seleccionar modelo de inferencia">
+          <select id="select-modelo" title="Seleccionar modelo activo">
             <option value="">Conectando...</option>
           </select>
         </div>
-        <button id="btn-abrir-ajustes" class="btn-settings" title="Configurar IP de Tailscale / Servidor">⚙️</button>
+        <button id="btn-abrir-ajustes" class="btn-settings" title="Configuración de Servidor / Red">⚙️</button>
       </div>
     </header>
 
-    <!-- Modal de Configuración y Setup Inicial -->
-    <div id="modal-ajustes">
-      <div class="modal-dialog">
-        <div class="modal-header">
-          <div class="modal-title">Configuración de Tailscale</div>
-          <button id="btn-cerrar-modal" class="btn-icon-subtle" title="Cerrar">✕</button>
-        </div>
-        <div class="modal-desc">
-          Ingresa la dirección IP de Tailscale de la máquina donde tienes corriendo Ollama (GPU/NPU).
-        </div>
-        <div class="modal-field">
-          <label class="modal-label">IP de Tailscale / Host Ollama</label>
-          <input type="text" id="input-tailscale-ip" class="modal-input" placeholder="ej. 100.83.114.11:11434" spellcheck="false" autocomplete="off" />
-        </div>
-        <div id="modal-status" class="modal-status"></div>
-        <div id="modal-model-list" class="modal-model-list" style="display: none;"></div>
-        <div class="modal-actions">
-          <button id="btn-cancelar-modal" class="btn-secondary">Cancelar</button>
-          <button id="btn-test-conectar" class="btn-primary">Probar y Guardar</button>
-        </div>
-      </div>
-    </div>
-
     <!-- Overlay de Drag & Drop -->
     <div id="drop-overlay">
-      <p>✦ Suelta el archivo o carpeta para adjuntar al contexto</p>
+      <p data-i18n="dropOverlayText">✦ Suelta el archivo o carpeta para adjuntar al contexto</p>
     </div>
     
     <!-- Canvas del Chat -->
@@ -75,36 +52,167 @@
       <div id="chat"></div>
     </div>
     
-    <!-- Isla Flotante de Entrada estilo Spotlight / Agent Dock -->
+    <!-- Isla Flotante de Entrada estilo Spotlight -->
     <footer id="input-container">
       <div id="input-inner">
-        <!-- Menú Emergente de Slash Commands y Skills -->
         <div id="slash-popup"></div>
 
         <div class="input-island">
           <button id="btn-archivo" title="Adjuntar archivo o carpeta local">＋</button>
           <div class="input-wrapper">
-            <textarea id="prompt" rows="1" placeholder="Haz una pregunta o presiona / para skills y comandos..."></textarea>
-            <button id="btn-stop">Detener ⏹</button>
+            <textarea id="prompt" rows="1" placeholder="Escribe un mensaje o presiona / para comandos..."></textarea>
+            <button id="btn-stop" data-i18n="btnStop">Detener ⏹</button>
           </div>
         </div>
       </div>
     </footer>
   </main>
 
+  <!-- Modal 1: Configuración & Setup Inicial -->
+  <div id="modal-ajustes">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title" data-i18n="setupTitle">Configuración de Tailscale</div>
+        <button id="btn-cerrar-modal" class="btn-icon-subtle" title="Cerrar">✕</button>
+      </div>
+
+      <!-- Paso 1: Selección de Idioma -->
+      <div class="modal-field">
+        <label class="modal-label" data-i18n="languageLabel">1. Idioma / Language</label>
+        <div class="lang-segmented-control">
+          <button id="btn-lang-es" class="lang-btn activo">Español</button>
+          <button id="btn-lang-en" class="lang-btn">English</button>
+        </div>
+      </div>
+
+      <!-- Paso 2: Dirección IP -->
+      <div class="modal-field">
+        <label class="modal-label" data-i18n="ipLabel">2. IP de Tailscale / Host Ollama</label>
+        <input type="text" id="input-tailscale-ip" class="modal-input" placeholder="ej. 100.83.114.11:11434" spellcheck="false" autocomplete="off" />
+      </div>
+
+      <div class="modal-desc" data-i18n="setupDesc">
+        Ingresa la dirección IP de Tailscale del equipo donde se ejecuta Ollama con aceleración por GPU.
+      </div>
+
+      <div id="modal-status" class="modal-status"></div>
+
+      <div class="modal-actions">
+        <button id="btn-cancelar-modal" class="btn-secondary" data-i18n="btnCancel">Cancelar</button>
+        <button id="btn-test-conectar" class="btn-primary" data-i18n="btnTestSave">Probar y Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 2: Popup de Modelos Descubiertos (Paso 3) -->
+  <div id="modal-modelos-descubiertos">
+    <div class="models-popup-card">
+      <div class="modal-header">
+        <div class="modal-title" data-i18n="discoveredTitle">🎉 Modelos Disponibles</div>
+        <button id="btn-cerrar-modelos" class="btn-icon-subtle" title="Cerrar">✕</button>
+      </div>
+      <div class="modal-desc" data-i18n="discoveredDesc">
+        Conexión establecida con éxito. Estos modelos están listos para inferencia acelerada:
+      </div>
+
+      <div id="models-list" class="models-list-container"></div>
+
+      <div class="modal-actions">
+        <button id="btn-comenzar" class="btn-primary" data-i18n="btnStart">Listo para usar ✓</button>
+      </div>
+    </div>
+  </div>
+
 <script>
+  // =========================================================================
+  // Diccionario de Internacionalización (i18n)
+  // =========================================================================
+  const I18N = {
+    es: {
+      conversationsTitle: 'CONVERSACIONES',
+      newSession: 'Conversación',
+      mainChat: 'Chat Principal',
+      dropOverlayText: '✦ Suelta el archivo o carpeta para adjuntar al contexto',
+      promptPlaceholder: 'Escribe un mensaje o presiona / para comandos...',
+      btnStop: 'Detener ⏹',
+      setupTitle: 'Configuración de Conexión',
+      languageLabel: '1. Idioma / Language',
+      ipLabel: '2. IP de Tailscale / Servidor Ollama',
+      setupDesc: 'Ingresa la IP de Tailscale de la máquina donde tienes Ollama corriendo con GPU.',
+      btnCancel: 'Cancelar',
+      btnTestSave: 'Probar y Guardar',
+      connecting: '⏳ Conectando con Ollama...',
+      connectionSuccess: '✓ Conexión establecida con éxito.',
+      connectionError: '✕ No se pudo conectar. Verifica que Ollama esté activo y la IP sea correcta.',
+      emptyIpError: 'Por favor ingresa una IP o dominio válido.',
+      discoveredTitle: '🎉 Modelos Disponibles',
+      discoveredDesc: 'Conexión establecida. Los siguientes modelos están listos en tu servidor:',
+      btnStart: 'Comenzar a usar ✓',
+      modelSwitched: '⚡ Modelo conmutado a:',
+      connectedTo: 'Conectado a Tailscale:',
+      copyBtn: 'Copiar',
+      copiedBtn: 'Copiado ✓'
+    },
+    en: {
+      conversationsTitle: 'CONVERSATIONS',
+      newSession: 'Conversation',
+      mainChat: 'Main Chat',
+      dropOverlayText: '✦ Drop file or folder to attach to context',
+      promptPlaceholder: 'Type a message or press / for commands...',
+      btnStop: 'Stop ⏹',
+      setupTitle: 'Connection Settings',
+      languageLabel: '1. Language / Idioma',
+      ipLabel: '2. Tailscale IP / Ollama Host',
+      setupDesc: 'Enter the Tailscale IP of the computer running Ollama with GPU acceleration.',
+      btnCancel: 'Cancel',
+      btnTestSave: 'Test & Save',
+      connecting: '⏳ Connecting to Ollama...',
+      connectionSuccess: '✓ Connection established successfully.',
+      connectionError: '✕ Could not connect. Ensure Ollama is running and Tailscale is active.',
+      emptyIpError: 'Please enter a valid IP address or domain.',
+      discoveredTitle: '🎉 Available Models',
+      discoveredDesc: 'Connection verified. The following models are ready on your server:',
+      btnStart: 'Start using ✓',
+      modelSwitched: '⚡ Model switched to:',
+      connectedTo: 'Connected to Tailscale:',
+      copyBtn: 'Copy',
+      copiedBtn: 'Copied ✓'
+    }
+  };
+
+  let idiomaActual = 'es';
+
+  function aplicarTraducciones() {
+    const t = I18N[idiomaActual];
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.getAttribute('data-i18n');
+      if (t[key]) el.textContent = t[key];
+    });
+    input.placeholder = t.promptPlaceholder;
+
+    // Actualizar botones del selector de idioma
+    btnLangEs.classList.toggle('activo', idiomaActual === 'es');
+    btnLangEn.classList.toggle('activo', idiomaActual === 'en');
+  }
+
+  // =========================================================================
+  // Elementos DOM
+  // =========================================================================
   const chat = document.getElementById('chat');
   const chatWrapper = document.getElementById('chat-wrapper');
   const input = document.getElementById('prompt');
   const btnStop = document.getElementById('btn-stop');
   const btnArchivo = document.getElementById('btn-archivo');
   const sidebar = document.getElementById('sidebar');
+  const mainView = document.getElementById('main-view');
   const btnToggle = document.getElementById('toggle-sidebar');
   const dropOverlay = document.getElementById('drop-overlay');
   const listaSesiones = document.getElementById('lista-sesiones');
   const btnNuevaSesion = document.getElementById('btn-nueva-sesion');
   const slashPopup = document.getElementById('slash-popup');
   const selectModelo = document.getElementById('select-modelo');
+
+  // Modales
   const modalAjustes = document.getElementById('modal-ajustes');
   const btnAbrirAjustes = document.getElementById('btn-abrir-ajustes');
   const btnCerrarModal = document.getElementById('btn-cerrar-modal');
@@ -112,99 +220,21 @@
   const btnTestConectar = document.getElementById('btn-test-conectar');
   const inputTailscaleIP = document.getElementById('input-tailscale-ip');
   const modalStatus = document.getElementById('modal-status');
-  const modalModelList = document.getElementById('modal-model-list');
+  const btnLangEs = document.getElementById('btn-lang-es');
+  const btnLangEn = document.getElementById('btn-lang-en');
+
+  // Modal Modelos Descubiertos
+  const modalModelos = document.getElementById('modal-modelos-descubiertos');
+  const btnCerrarModelos = document.getElementById('btn-cerrar-modelos');
+  const btnComenzar = document.getElementById('btn-comenzar');
+  const modelsList = document.getElementById('models-list');
   
-  // Estado de Sesiones
+  // Estado
   let sesiones = [{ id: 1, titulo: 'Chat Principal', mensajes: [] }];
   let sesionActivaId = 1;
   let currentIaMessage = null;
   let estaGenerando = false;
   let hostConfigurado = "";
-
-  // =========================================================================
-  // Control del Modal de Ajustes & Setup Inicial
-  // =========================================================================
-
-  function abrirModalAjustes(mensajeInicial = "") {
-    inputTailscaleIP.value = hostConfigurado || "";
-    modalStatus.className = "modal-status";
-    modalStatus.innerHTML = mensajeInicial ? `<span>${mensajeInicial}</span>` : "";
-    modalModelList.style.display = "none";
-    modalModelList.innerHTML = "";
-    modalAjustes.classList.add('visible');
-    setTimeout(() => inputTailscaleIP.focus(), 100);
-  }
-
-  function cerrarModalAjustes() {
-    modalAjustes.classList.remove('visible');
-  }
-
-  btnAbrirAjustes.addEventListener('click', () => abrirModalAjustes());
-  btnCerrarModal.addEventListener('click', cerrarModalAjustes);
-  btnCancelarModal.addEventListener('click', cerrarModalAjustes);
-
-  // Probar y Conectar a la IP de Tailscale
-  btnTestConectar.addEventListener('click', async () => {
-    const ipIngresada = inputTailscaleIP.value.trim();
-    if (!ipIngresada) {
-      modalStatus.className = "modal-status error";
-      modalStatus.innerText = "Por favor ingresa una IP o dominio.";
-      return;
-    }
-
-    modalStatus.className = "modal-status cargando";
-    modalStatus.innerText = "⏳ Conectando con Ollama...";
-    btnTestConectar.disabled = true;
-
-    try {
-      const res = await window.api.testConexionOllama(ipIngresada);
-      if (res.success) {
-        modalStatus.className = "modal-status exito";
-        modalStatus.innerText = `✓ Conexión exitosa. ${res.modelos.length} modelo(s) encontrado(s):`;
-        
-        // Mostrar lista de modelos encontrados
-        modalModelList.style.display = "flex";
-        modalModelList.innerHTML = res.modelos.map(m => `<span class="modal-chip">${m}</span>`).join('');
-
-        // Guardar configuración persistente
-        const modeloPreferido = res.modelos[0] || "qwen3.5:4b";
-        await window.api.guardarConfigIP({ host: res.host, model: modeloPreferido });
-        hostConfigurado = res.host;
-
-        // Actualizar selector de la barra principal
-        selectModelo.innerHTML = '';
-        res.modelos.forEach(m => {
-          const opt = document.createElement('option');
-          opt.value = m;
-          opt.textContent = m;
-          if (m === modeloPreferido) opt.selected = true;
-          selectModelo.appendChild(opt);
-        });
-
-        setTimeout(() => {
-          cerrarModalAjustes();
-          agregarBurbujaSistema(`Conectado a Tailscale: ${res.host} [${modeloPreferido}]`);
-        }, 1200);
-
-      } else {
-        modalStatus.className = "modal-status error";
-        modalStatus.innerText = `✕ Error: ${res.error}. Verifica que Ollama esté corriendo y Tailscale activo.`;
-      }
-    } catch (e) {
-      modalStatus.className = "modal-status error";
-      modalStatus.innerText = `✕ Error de red: ${e.message}`;
-    } finally {
-      btnTestConectar.disabled = false;
-    }
-  });
-
-  // Enter dentro del input del modal
-  inputTailscaleIP.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      btnTestConectar.click();
-    }
-  });
 
   // Comandos del Sistema
   const COMANDOS_SISTEMA = [
@@ -220,25 +250,150 @@
   let filteredCommands = [];
 
   // =========================================================================
+  // Cambio de Idioma Dinámico
+  // =========================================================================
+  btnLangEs.addEventListener('click', async () => {
+    idiomaActual = 'es';
+    aplicarTraducciones();
+    await window.api.guardarConfigIP({ language: 'es' });
+  });
+
+  btnLangEn.addEventListener('click', async () => {
+    idiomaActual = 'en';
+    aplicarTraducciones();
+    await window.api.guardarConfigIP({ language: 'en' });
+  });
+
+  // =========================================================================
+  // Control de Modales & Cierre con Toque Afuera
+  // =========================================================================
+  function abrirModalAjustes(mensajeInicial = "") {
+    inputTailscaleIP.value = hostConfigurado || "";
+    modalStatus.className = "modal-status";
+    modalStatus.innerHTML = mensajeInicial ? `<span>${mensajeInicial}</span>` : "";
+    modalAjustes.classList.add('visible');
+    setTimeout(() => inputTailscaleIP.focus(), 120);
+  }
+
+  function cerrarModalAjustes() {
+    modalAjustes.classList.remove('visible');
+  }
+
+  function abrirModalModelos(modelos) {
+    cerrarModalAjustes();
+    modelsList.innerHTML = '';
+    modelos.forEach(m => {
+      const card = document.createElement('div');
+      card.className = 'model-item-card';
+      card.innerHTML = `
+        <span class="model-item-name">${m}</span>
+        <span class="model-item-badge">READY</span>
+      `;
+      modelsList.appendChild(card);
+    });
+    modalModelos.classList.add('visible');
+  }
+
+  function cerrarModalModelos() {
+    modalModelos.classList.remove('visible');
+  }
+
+  btnAbrirAjustes.addEventListener('click', () => abrirModalAjustes());
+  btnCerrarModal.addEventListener('click', cerrarModalAjustes);
+  btnCancelarModal.addEventListener('click', cerrarModalAjustes);
+  btnCerrarModelos.addEventListener('click', cerrarModalModelos);
+  btnComenzar.addEventListener('click', cerrarModalModelos);
+
+  // Cerrar al hacer clic afuera (backdrop click)
+  modalAjustes.addEventListener('click', (e) => {
+    if (e.target === modalAjustes) cerrarModalAjustes();
+  });
+
+  modalModelos.addEventListener('click', (e) => {
+    if (e.target === modalModelos) cerrarModalModelos();
+  });
+
+  // =========================================================================
+  // Flujo: Probar y Guardar IP de Tailscale
+  // =========================================================================
+  btnTestConectar.addEventListener('click', async () => {
+    const t = I18N[idiomaActual];
+    const ipIngresada = inputTailscaleIP.value.trim();
+    if (!ipIngresada) {
+      modalStatus.className = "modal-status error";
+      modalStatus.innerText = t.emptyIpError;
+      return;
+    }
+
+    modalStatus.className = "modal-status cargando";
+    modalStatus.innerText = t.connecting;
+    btnTestConectar.disabled = true;
+
+    try {
+      const res = await window.api.testConexionOllama(ipIngresada);
+      if (res.success && res.modelos && res.modelos.length > 0) {
+        modalStatus.className = "modal-status exito";
+        modalStatus.innerText = t.connectionSuccess;
+
+        const modeloPreferido = res.modelos[0];
+        hostConfigurado = res.host;
+        await window.api.guardarConfigIP({ host: res.host, model: modeloPreferido, language: idiomaActual });
+
+        // Actualizar select de la barra
+        selectModelo.innerHTML = '';
+        res.modelos.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m;
+          opt.textContent = m;
+          if (m === modeloPreferido) opt.selected = true;
+          selectModelo.appendChild(opt);
+        });
+
+        // Mostrar Popup con los modelos descubiertos
+        setTimeout(() => {
+          abrirModalModelos(res.modelos);
+          agregarBurbujaSistema(`${t.connectedTo} ${res.host} [${modeloPreferido}]`);
+        }, 500);
+
+      } else {
+        modalStatus.className = "modal-status error";
+        modalStatus.innerText = res.error || t.connectionError;
+      }
+    } catch (e) {
+      modalStatus.className = "modal-status error";
+      modalStatus.innerText = `✕ Error: ${e.message}`;
+    } finally {
+      btnTestConectar.disabled = false;
+    }
+  });
+
+  inputTailscaleIP.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      btnTestConectar.click();
+    }
+  });
+
+  // =========================================================================
   // Inicialización de Modelos y Skills
   // =========================================================================
-
   async function inicializarModelos() {
     try {
       const data = await window.api.obtenerModelos();
       hostConfigurado = data ? data.hostActual : "";
 
-      // Si no hay host configurado o está vacío, abrir el Setup Inicial
+      if (data && data.language) {
+        idiomaActual = data.language;
+        aplicarTraducciones();
+      }
+
       if (!hostConfigurado) {
-        abrirModalAjustes("👋 ¡Bienvenido! Ingresa la IP de Tailscale de tu PC con Ollama para comenzar.");
+        abrirModalAjustes(idiomaActual === 'es' ? '👋 ¡Bienvenido! Configura tu IP de Tailscale para comenzar.' : '👋 Welcome! Setup your Tailscale IP to get started.');
         return;
       }
 
       selectModelo.innerHTML = '';
-      
-      let lista = (data && data.modelos && data.modelos.length > 0) 
-        ? data.modelos 
-        : ['qwen3.5:4b', 'qwen3-coder', 'gemma4:12b'];
+      const lista = (data && data.modelos && data.modelos.length > 0) ? data.modelos : ['qwen3.5:4b', 'qwen3-coder', 'gemma4:12b'];
       
       if (data && data.modeloActual && !lista.includes(data.modeloActual)) {
         lista.unshift(data.modeloActual);
@@ -252,21 +407,16 @@
         selectModelo.appendChild(opt);
       });
     } catch (err) {
-      console.error("Error al conectar con modelos:", err);
-      abrirModalAjustes("⚠️ No se pudo conectar al host Ollama. Verifica tu IP.");
+      abrirModalAjustes();
     }
   }
 
-  // Listener directo para cambiar de modelo al seleccionar
   selectModelo.addEventListener('change', async (e) => {
     const nuevo = e.target.value;
     if (!nuevo) return;
-    try {
-      await window.api.cambiarModelo(nuevo);
-      agregarBurbujaSistema(`⚡ Modelo conmutado a: ${nuevo}`);
-    } catch (err) {
-      console.error("Error al cambiar de modelo:", err);
-    }
+    await window.api.cambiarModelo(nuevo);
+    const t = I18N[idiomaActual];
+    agregarBurbujaSistema(`${t.modelSwitched} ${nuevo}`);
   });
 
   async function inicializarSkills() {
@@ -279,15 +429,12 @@
         tipo: 'skill'
       }));
       catalogoComandos = [...COMANDOS_SISTEMA, ...skillsMapeadas];
-    } catch (err) {
-      console.error("Error al obtener skills:", err);
-    }
+    } catch (err) {}
   }
 
   // =========================================================================
-  // Slash Commands & PopUp Flotante
+  // PopUp de Slash Commands
   // =========================================================================
-
   function getSlashToken(value) {
     const match = value.match(/^(\/\S*)/);
     return match ? match[1] : null;
@@ -303,14 +450,12 @@
     }
 
     filteredCommands = catalogoComandos.filter(c => c.cmd.startsWith(token));
-
     if (filteredCommands.length === 0) {
       ocultarPopup();
       return;
     }
 
     if (selectedIndex >= filteredCommands.length) selectedIndex = filteredCommands.length - 1;
-
     renderPopup();
     slashPopup.classList.add('visible');
   }
@@ -320,15 +465,14 @@
     filteredCommands.forEach((c, i) => {
       const item = document.createElement('div');
       item.className = 'slash-item' + (i === selectedIndex ? ' selected' : '');
-      
       const badge = c.tipo === 'skill' ? '<span class="slash-item-badge">SKILL</span>' : '';
-      item.innerHTML =
-        '<div class="slash-item-header">' +
-          '<span class="slash-item-cmd">' + c.cmd + '</span>' + badge +
-          '<span class="slash-item-args">' + c.args + '</span>' +
-        '</div>' +
-        '<div class="slash-item-desc">' + c.desc + '</div>';
-        
+      item.innerHTML = `
+        <div class="slash-item-header">
+          <span class="slash-item-cmd">${c.cmd}</span>${badge}
+          <span class="slash-item-args">${c.args}</span>
+        </div>
+        <div class="slash-item-desc">${c.desc}</div>
+      `;
       item.addEventListener('mousedown', (e) => {
         e.preventDefault();
         seleccionarComando(i);
@@ -358,9 +502,8 @@
   }
 
   // =========================================================================
-  // Sesiones
+  // Manejo de Sesiones & Toggle con Protección de Semáforos
   // =========================================================================
-
   function actualizarSidebar() {
     listaSesiones.innerHTML = '';
     sesiones.forEach((sesion) => {
@@ -384,74 +527,60 @@
 
   btnNuevaSesion.addEventListener('click', () => {
     if (estaGenerando) return;
+    const t = I18N[idiomaActual];
     const nuevaId = Date.now();
-    sesiones.unshift({ id: nuevaId, titulo: `Sesión ${sesiones.length + 1}`, mensajes: [] });
+    sesiones.unshift({ id: nuevaId, titulo: `${t.newSession} ${sesiones.length + 1}`, mensajes: [] });
     cambiarSesion(nuevaId);
   });
-
-  const mainView = document.getElementById('main-view');
 
   btnToggle.addEventListener('click', () => {
     sidebar.classList.toggle('oculto');
     const estaOculto = sidebar.classList.contains('oculto');
-    
-    // Activa la zona de seguridad para esquivar los semáforos de macOS
     if (estaOculto) {
       mainView.classList.add('sidebar-cerrado');
     } else {
       mainView.classList.remove('sidebar-cerrado');
     }
-
-    btnToggle.title = estaOculto ? 'Mostrar barra lateral' : 'Ocultar barra lateral';
   });
 
   // =========================================================================
-  // Renderizado Markdown y Antigravity Artifacts
+  // Markdown & Artifacts
   // =========================================================================
-
   function formatearMarkdownSimple(texto) {
-    let out = texto
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+    const t = I18N[idiomaActual];
+    let out = texto.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-    // Chips especiales para Skills activadas o lecturas de archivos
     out = out.replace(/⚡ \[Skill activada: ([^\]]+)\]/g, '<div class="callout-pill">✦ SKILL: $1</div>');
-    out = out.replace(/\[Mac: ([^\]]+)\]/g, '<div class="callout-pill" style="border-color: rgba(0,229,255,0.4); color: #80DEEA;">✦ CONTEXTO: $1</div>');
+    out = out.replace(/\[Mac: ([^\]]+)\]/g, '<div class="callout-pill" style="border-color: rgba(0,122,255,0.4); color: #5AC8FA;">✦ CONTEXTO: $1</div>');
 
-    // Bloques de código como Artifacts con botón de copiar
     out = out.replace(/```([a-zA-Z0-9_-]*)\r?\n([\s\S]*?)```/g, (match, lang, code) => {
-      const lenguaje = lang || 'código';
+      const lenguaje = lang || 'code';
       const cleanCode = code.trim();
       return `
         <div class="code-artifact">
           <div class="code-header">
             <span>${lenguaje}</span>
-            <button class="btn-copy" onclick="copiarAlPortapapeles(this)">Copiar</button>
+            <button class="btn-copy" onclick="copiarAlPortapapeles(this)">${t.copyBtn}</button>
           </div>
           <pre><code>${cleanCode}</code></pre>
         </div>
       `;
     });
 
-    // Código inline
     out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
-    // Negrita
     out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-
     return out;
   }
 
-  // Función global para copiar código
   window.copiarAlPortapapeles = (btn) => {
+    const t = I18N[idiomaActual];
     const pre = btn.closest('.code-artifact').querySelector('pre code');
     if (pre) {
       navigator.clipboard.writeText(pre.innerText);
-      const original = btn.innerText;
-      btn.innerText = 'Copiado ✓';
+      btn.innerText = t.copiedBtn;
       btn.style.color = '#30D158';
       setTimeout(() => {
-        btn.innerText = original;
+        btn.innerText = t.copyBtn;
         btn.style.color = '';
       }, 1500);
     }
@@ -490,9 +619,8 @@
   }
 
   // =========================================================================
-  // Interacción de Teclado y Envío
+  // Interacción y Envío
   // =========================================================================
-
   input.addEventListener('keydown', (e) => {
     if (slashPopup.classList.contains('visible')) {
       if (e.key === 'ArrowDown') {
@@ -545,7 +673,8 @@
     btnStop.style.display = 'block';
     ocultarPopup();
     
-    if (sesionActual.titulo.startsWith('Sesión') && sesionActual.mensajes.length <= 2) {
+    const t = I18N[idiomaActual];
+    if (sesionActual.titulo.startsWith(t.newSession) && sesionActual.mensajes.length <= 2) {
       sesionActual.titulo = texto.split(' ').slice(0, 3).join(' ') + '...';
       actualizarSidebar();
     }
@@ -554,13 +683,11 @@
   // =========================================================================
   // Streaming de la IA
   // =========================================================================
-
   window.api.onStream((chunk) => {
     if (currentIaMessage) {
       const sesionActual = sesiones.find(s => s.id === sesionActivaId);
       const ultimoMsg = sesionActual.mensajes[sesionActual.mensajes.length - 1];
       ultimoMsg.texto += chunk;
-      
       currentIaMessage.innerHTML = formatearMarkdownSimple(ultimoMsg.texto);
       scrollAbajo();
     }
@@ -586,7 +713,6 @@
     setTimeout(() => ocultarPopup(), 150);
   });
 
-  // Diálogo y Drag & Drop
   btnArchivo.addEventListener('click', async () => {
     const ruta = await window.api.seleccionarArchivo();
     if (ruta) {
@@ -619,7 +745,8 @@
     }
   });
 
-  // Inicio
+  // Inicialización
+  aplicarTraducciones();
   actualizarSidebar();
   inicializarModelos();
   inicializarSkills();

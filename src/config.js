@@ -42,15 +42,15 @@ export const config = {
     // Prioridad: 1. Guardado en app por el usuario, 2. .env, 3. Vacío para forzar Setup
     ollamaHost: configGuardada.ollamaHost || process.env.OLLAMA_HOST || '',
     currentModel: configGuardada.currentModel || process.env.OLLAMA_MODEL || '',
+    language: configGuardada.language || 'es',
     projectRoot: PROJECT_ROOT,
     skillsDir: path.join(PROJECT_ROOT, 'skills'),
 
-    guardarConfig({ host, model }) {
+    guardarConfig({ host, model, language }) {
         if (host !== undefined) {
-            // Normalizar host: quitar http:// o trailing slashes si el usuario los escribió
             let cleanHost = host.trim().replace(/^https?:\/\//i, '').replace(/\/$/, '');
             if (!cleanHost.includes(':')) {
-                cleanHost += ':11434'; // Puerto predeterminado de Ollama
+                cleanHost += ':11434';
             }
             this.ollamaHost = cleanHost;
         }
@@ -59,15 +59,19 @@ export const config = {
             this.currentModel = model.trim();
         }
 
+        if (language !== undefined) {
+            this.language = language === 'en' ? 'en' : 'es';
+        }
+
         try {
             const dir = path.dirname(CONFIG_PATH);
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
             
             fs.writeFileSync(CONFIG_PATH, JSON.stringify({
                 ollamaHost: this.ollamaHost,
-                currentModel: this.currentModel
+                currentModel: this.currentModel,
+                language: this.language
             }, null, 2), 'utf-8');
-            console.log(`[Config] Guardado persistente en ${CONFIG_PATH}`);
         } catch (e) {
             console.error('[Config] Error guardando config persistente:', e.message);
         }
