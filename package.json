@@ -1,5 +1,6 @@
 {
   "name": "local-wireless-llm",
+  "productName": "Wireless LLM",
   "version": "1.0.0",
   "description": "An extension of your Local LLM now available everywhere",
   "type": "module",
@@ -13,13 +14,18 @@
   },
   "build": {
     "appId": "com.localwireless.llm",
-    "productName": "LocalWirelessLLM",
+    "productName": "Wireless LLM",
+    "directories": {
+      "output": "dist"
+    },
     "mac": {
       "category": "public.app-category.developer-tools",
-      "target": ["dmg", "zip"]
+      "target": ["dmg", "zip"],
+      "icon": "ui/assets/icon.png"
     },
     "win": {
-      "target": ["nsis", "portable"]
+      "target": ["nsis", "portable"],
+      "icon": "ui/assets/icon.png"
     },
     "files": [
       "main.js",

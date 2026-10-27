@@ -11,15 +11,27 @@ import { obtenerSkills } from './src/skills-loader.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Configurar el nombre oficial de la aplicación en macOS y el Dock
+app.setName('Wireless LLM');
+
 let mainWindow;
 let abortController = null;
 
 function createWindow() {
+    const iconPath = path.join(__dirname, 'ui', 'assets', 'icon.png');
+
+    // Configurar icono en el Dock de macOS
+    if (process.platform === 'darwin' && app.dock && fs.existsSync(iconPath)) {
+        app.dock.setIcon(iconPath);
+    }
+
     mainWindow = new BrowserWindow({
+        title: 'Wireless LLM',
         width: 1140,
         height: 800,
         minWidth: 840,
         minHeight: 560,
+        icon: iconPath,
         titleBarStyle: 'hiddenInset',
         trafficLightPosition: { x: 18, y: 18 },
         vibrancy: 'under-window',
