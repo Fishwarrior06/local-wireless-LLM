@@ -16,16 +16,36 @@ export async function listarModelosOllama() {
     }
 }
 
-export async function generarStream({ prompt, signal, onChunk, model = null }) {
+/**
+ * Genera una respuesta en streaming usando /api/chat de Ollama.
+ * @param {Object} opts
+ * @param {string} opts.prompt - Mensaje actual del usuario (texto plano)
+ * @param {Array}  opts.historial - Array de {rol: 'yo'|'ia', texto: string} de la sesión actual
+ * @param {AbortSignal} opts.signal
+ * @param {Function} opts.onChunk
+ * @param {string|null} opts.model
+ */
+export async function generarStream({ prompt, historial = [], signal, onChunk, model = null }) {
     const modeloUso = model || config.currentModel;
-    const url = `http://${config.ollamaHost}/api/generate`;
+    const url = `http://${config.ollamaHost}/api/chat`;
+
+    // Convertir historial al formato de mensajes de Ollama (excluyendo el último msg vacío de la IA)
+    const messages = historial
+        .filter(m => m.texto && m.texto.trim() !== '')
+        .map(m => ({
+            role: m.rol === 'yo' ? 'user' : 'assistant',
+            content: m.texto
+        }));
+
+    // Añadir el mensaje actual del usuario al final
+    messages.push({ role: 'user', content: prompt });
 
     const respuesta = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             model: modeloUso,
-            prompt: prompt,
+            messages,
             stream: true
         }),
         signal
@@ -43,9 +63,11 @@ export async function generarStream({ prompt, signal, onChunk, model = null }) {
         for (const linea of lineas) {
             try {
                 const json = JSON.parse(linea);
-                if (json.response) {
-                    respuestaAcumulada += json.response;
-                    if (onChunk) onChunk(json.response);
+                // /api/chat devuelve json.message.content en cada chunk
+                const token = json.message?.content;
+                if (token) {
+                    respuestaAcumulada += token;
+                    if (onChunk) onChunk(token);
                 }
             } catch {}
         }

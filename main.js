@@ -66,6 +66,14 @@ function configurarMenuMac() {
     }
 }
 
+function setDockIcon() {
+    if (process.platform !== 'darwin' || !app.dock) return;
+    const iconPath = path.join(__dirname, 'ui', 'assets', 'icon.png');
+    if (fs.existsSync(iconPath)) {
+        app.dock.setIcon(nativeImage.createFromPath(iconPath));
+    }
+}
+
 function createWindow() {
     configurarMenuMac();
 
@@ -78,6 +86,7 @@ function createWindow() {
         minWidth: 840,
         minHeight: 560,
         icon: iconPath,
+        show: false, // No mostrar hasta que esté listo para evitar flash y lucha con el Dock
         titleBarStyle: 'hiddenInset',
         trafficLightPosition: { x: 18, y: 18 },
         vibrancy: 'under-window',
@@ -103,26 +112,20 @@ function createWindow() {
         }
     });
 
-    // Re-aplicar el ícono del Dock cuando la ventana esté lista para mostrarse,
-    // ya que macOS puede revertirlo al ícono del bundle al mostrar la ventana.
     mainWindow.once('ready-to-show', () => {
-        if (process.platform === 'darwin' && app.dock && fs.existsSync(iconPath)) {
-            app.dock.setIcon(nativeImage.createFromPath(iconPath));
-        }
+        // Setear el ícono JUSTO antes de mostrar la ventana
+        setDockIcon();
+        mainWindow.show();
+        // Re-aplicar después de que la ventana es visible por si macOS lo revierte
+        setTimeout(setDockIcon, 300);
+        setTimeout(setDockIcon, 1000);
     });
 
     mainWindow.loadFile(path.join(__dirname, 'ui', 'index.html'));
 }
 
 app.whenReady().then(() => {
-    // Configurar icono del Dock ANTES de crear la ventana
-    if (process.platform === 'darwin' && app.dock) {
-        const iconPath = path.join(__dirname, 'ui', 'assets', 'icon.png');
-        if (fs.existsSync(iconPath)) {
-            const dockIcon = nativeImage.createFromPath(iconPath);
-            app.dock.setIcon(dockIcon);
-        }
-    }
+    setDockIcon(); // Primera vez, antes de crear la ventana
     createWindow();
 });
 
@@ -199,7 +202,7 @@ ipcMain.handle('obtener-skills', async () => {
 });
 
 // Procesar mensaje del usuario
-ipcMain.on('mensaje-usuario', async (event, input) => {
+ipcMain.on('mensaje-usuario', async (event, { input, historial }) => {
     const parsed = procesarInputUsuario(input);
 
     if (parsed.error) {
@@ -228,6 +231,11 @@ ipcMain.on('mensaje-usuario', async (event, input) => {
     try {
         const respuestaFinal = await generarStream({
             prompt: promptCompleto,
+            // Pasar historial de la sesión para que el modelo recuerde el contexto previo.
+            // En modos de edición/skill usamos historial vacío para no contaminar el contexto.
+            historial: (parsed.modoEdicion || parsed.modoEditaRepo || parsed.skillAplicada)
+                ? []
+                : (historial || []),
             signal: abortController.signal,
             onChunk: (chunk) => event.sender.send('stream-ia', chunk)
         });

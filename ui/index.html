@@ -230,8 +230,33 @@
   const modelsList = document.getElementById('models-list');
   
   // Estado
-  let sesiones = [{ id: 1, titulo: 'Chat Principal', mensajes: [] }];
-  let sesionActivaId = 1;
+  const SESIONES_KEY = 'local-llm-sesiones';
+  const SESION_ACTIVA_KEY = 'local-llm-sesion-activa';
+
+  function cargarSesiones() {
+    try {
+      const guardadas = localStorage.getItem(SESIONES_KEY);
+      if (guardadas) {
+        const parsed = JSON.parse(guardadas);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [{ id: 1, titulo: 'Chat Principal', mensajes: [] }];
+  }
+
+  function guardarSesiones() {
+    try {
+      localStorage.setItem(SESIONES_KEY, JSON.stringify(sesiones));
+      localStorage.setItem(SESION_ACTIVA_KEY, String(sesionActivaId));
+    } catch {}
+  }
+
+  let sesiones = cargarSesiones();
+  let sesionActivaId = (() => {
+    const saved = localStorage.getItem(SESION_ACTIVA_KEY);
+    const id = saved ? Number(saved) : null;
+    return sesiones.find(s => s.id === id) ? id : sesiones[0].id;
+  })();
   let currentIaMessage = null;
   let estaGenerando = false;
   let hostConfigurado = "";
@@ -502,6 +527,103 @@
   }
 
   // =========================================================================
+  // Context Menu de Sesiones (Right-click)
+  // =========================================================================
+  let contextMenuEl = null;
+
+  function cerrarContextMenu() {
+    if (contextMenuEl) {
+      contextMenuEl.remove();
+      contextMenuEl = null;
+    }
+  }
+
+  document.addEventListener('click', cerrarContextMenu);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarContextMenu(); });
+
+  function mostrarContextMenu(e, sesionId) {
+    e.preventDefault();
+    e.stopPropagation();
+    cerrarContextMenu();
+
+    const menu = document.createElement('div');
+    menu.className = 'sesion-context-menu';
+    menu.style.left = `${Math.min(e.clientX, window.innerWidth - 180)}px`;
+    menu.style.top  = `${Math.min(e.clientY, window.innerHeight - 100)}px`;
+
+    // Botón Renombrar
+    const btnRename = document.createElement('button');
+    btnRename.innerHTML = '✏️ Renombrar';
+    btnRename.onclick = (ev) => {
+      ev.stopPropagation();
+      cerrarContextMenu();
+      iniciarRename(sesionId);
+    };
+
+    // Separador
+    const sep = document.createElement('div');
+    sep.className = 'menu-separator';
+
+    // Botón Eliminar
+    const btnDelete = document.createElement('button');
+    btnDelete.className = 'danger';
+    btnDelete.innerHTML = '🗑️ Eliminar';
+    btnDelete.onclick = (ev) => {
+      ev.stopPropagation();
+      cerrarContextMenu();
+      eliminarSesion(sesionId);
+    };
+
+    menu.appendChild(btnRename);
+    menu.appendChild(sep);
+    menu.appendChild(btnDelete);
+    document.body.appendChild(menu);
+    contextMenuEl = menu;
+  }
+
+  function iniciarRename(sesionId) {
+    const div = listaSesiones.querySelector(`[data-sesion-id="${sesionId}"]`);
+    if (!div) return;
+    const sesion = sesiones.find(s => s.id === sesionId);
+    if (!sesion) return;
+
+    const input = document.createElement('input');
+    input.className = 'sesion-rename-input';
+    input.value = sesion.titulo;
+    div.innerHTML = '';
+    div.appendChild(input);
+    input.focus();
+    input.select();
+
+    const confirmar = () => {
+      const nuevoNombre = input.value.trim();
+      if (nuevoNombre) sesion.titulo = nuevoNombre;
+      guardarSesiones();
+      actualizarSidebar();
+    };
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); confirmar(); }
+      if (e.key === 'Escape') { actualizarSidebar(); }
+      e.stopPropagation();
+    });
+    input.addEventListener('blur', confirmar);
+    input.addEventListener('click', (e) => e.stopPropagation());
+  }
+
+  function eliminarSesion(sesionId) {
+    if (sesiones.length === 1) return; // No borrar la última
+    sesiones = sesiones.filter(s => s.id !== sesionId);
+    if (sesionActivaId === sesionId) {
+      sesionActivaId = sesiones[0].id;
+      cambiarSesion(sesionActivaId);
+    } else {
+      guardarSesiones();
+      actualizarSidebar();
+    }
+  }
+
+  // =========================================================================
   // Manejo de Sesiones & Toggle con Protección de Semáforos
   // =========================================================================
   function actualizarSidebar() {
@@ -509,8 +631,10 @@
     sesiones.forEach((sesion) => {
       const div = document.createElement('div');
       div.className = `sesion-btn ${sesion.id === sesionActivaId ? 'activa' : ''}`;
+      div.setAttribute('data-sesion-id', sesion.id);
       div.innerText = sesion.titulo;
       div.onclick = () => cambiarSesion(sesion.id);
+      div.addEventListener('contextmenu', (e) => mostrarContextMenu(e, sesion.id));
       listaSesiones.appendChild(div);
     });
   }
@@ -518,6 +642,7 @@
   function cambiarSesion(id) {
     if (estaGenerando) return;
     sesionActivaId = id;
+    guardarSesiones();
     actualizarSidebar();
     chat.innerHTML = '';
     const sesionActual = sesiones.find(s => s.id === sesionActivaId);
@@ -531,6 +656,7 @@
     const nuevaId = Date.now();
     sesiones.unshift({ id: nuevaId, titulo: `${t.newSession} ${sesiones.length + 1}`, mensajes: [] });
     cambiarSesion(nuevaId);
+    guardarSesiones();
   });
 
   btnToggle.addEventListener('click', () => {
@@ -659,13 +785,25 @@
     if (texto.trim() === '' || estaGenerando) return;
     
     const sesionActual = sesiones.find(s => s.id === sesionActivaId);
+
+    // Construir historial ANTES de añadir el mensaje actual (para no duplicarlo)
+    const historialParaIA = sesionActual.mensajes
+      .filter(m => m.texto && m.texto.trim() !== '')
+      .slice(-30); // Limitar a los últimos 30 mensajes para no saturar el contexto
+
     sesionActual.mensajes.push({ rol: 'yo', texto: texto });
     crearBurbujaDOM('yo', texto);
     
     sesionActual.mensajes.push({ rol: 'ia', texto: '' });
     currentIaMessage = crearBurbujaDOM('ia', '');
     
-    window.api.enviarMensaje(texto.trim());
+    // Resetear buffer de stream para este nuevo mensaje
+    streamBuffer = '';
+    streamTextoBase = '';
+    clearTimeout(streamFlushTimer);
+    streamFlushTimer = null;
+
+    window.api.enviarMensaje(texto.trim(), historialParaIA);
     
     input.value = '';
     ajustarAlturaTextarea();
@@ -678,24 +816,70 @@
       sesionActual.titulo = texto.split(' ').slice(0, 3).join(' ') + '...';
       actualizarSidebar();
     }
+    guardarSesiones();
   }
 
   // =========================================================================
-  // Streaming de la IA
+  // Streaming de la IA — Renderizado suave por segmentos
   // =========================================================================
+
+  // Buffer que acumula tokens crudos entre flushes
+  let streamBuffer = '';
+  // Texto ya confirmado/renderizado (sin el segmento en vuelo)
+  let streamTextoBase = '';
+  let streamFlushTimer = null;
+
+  // Parte del texto que ya fue escrita como HTML fijo en la burbuja
+  // Los nuevos segmentos se añaden como <span class="stream-segment"> con fade-in
+  function flushStream() {
+    if (!currentIaMessage || streamBuffer === '') return;
+
+    const sesionActual = sesiones.find(s => s.id === sesionActivaId);
+    if (!sesionActual) return;
+    const ultimoMsg = sesionActual.mensajes[sesionActual.mensajes.length - 1];
+
+    streamTextoBase += streamBuffer;
+    streamBuffer = '';
+    ultimoMsg.texto = streamTextoBase;
+
+    // Re-renderizar con el segmento nuevo envuelto en span animado
+    // Renderizamos el texto base como HTML y añadimos el span al final del texto raw
+    currentIaMessage.innerHTML = formatearMarkdownSimple(streamTextoBase);
+    scrollAbajo();
+  }
+
   window.api.onStream((chunk) => {
-    if (currentIaMessage) {
-      const sesionActual = sesiones.find(s => s.id === sesionActivaId);
-      const ultimoMsg = sesionActual.mensajes[sesionActual.mensajes.length - 1];
-      ultimoMsg.texto += chunk;
-      currentIaMessage.innerHTML = formatearMarkdownSimple(ultimoMsg.texto);
-      scrollAbajo();
+    if (!currentIaMessage) return;
+    streamBuffer += chunk;
+
+    // Hacemos flush cada ~60ms O cuando llegue un salto de línea (final de segmento natural)
+    if (!streamFlushTimer) {
+      streamFlushTimer = setTimeout(() => {
+        streamFlushTimer = null;
+        flushStream();
+      }, 60);
+    }
+    // Flush inmediato ante salto de línea para que los párrafos aparezcan limpios
+    if (chunk.includes('\n')) {
+      clearTimeout(streamFlushTimer);
+      streamFlushTimer = null;
+      flushStream();
     }
   });
 
   window.api.onFinStream(() => {
+    // Flush final de lo que quedó en el buffer
+    clearTimeout(streamFlushTimer);
+    streamFlushTimer = null;
+    flushStream();
+
+    // Resetear estado del stream
+    streamBuffer = '';
+    streamTextoBase = '';
+
     estaGenerando = false;
     btnStop.style.display = 'none';
+    guardarSesiones(); // Persistir la respuesta completa de la IA
   });
 
   btnStop.addEventListener('click', () => {
@@ -748,6 +932,14 @@
   // Inicialización
   aplicarTraducciones();
   actualizarSidebar();
+  // Restaurar mensajes de la sesión activa al abrir la app
+  const sesionRestaurada = sesiones.find(s => s.id === sesionActivaId);
+  if (sesionRestaurada && sesionRestaurada.mensajes.length > 0) {
+    sesionRestaurada.mensajes.forEach(msg => {
+      if (msg.texto && msg.texto.trim() !== '') crearBurbujaDOM(msg.rol, msg.texto);
+    });
+    scrollAbajo();
+  }
   inicializarModelos();
   inicializarSkills();
 </script>
