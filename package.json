@@ -1,0 +1,16 @@
+{
+  "name": "local-wireless-llm",
+  "version": "1.0.0",
+  "description": "An extension of your Local LLM now available everywhere",
+  "main": "agents.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "chalk": "^5.6.2",
+    "dotenv": "^18.0.9"
+  }
+}
