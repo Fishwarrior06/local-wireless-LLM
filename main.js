@@ -53,12 +53,41 @@ ipcMain.handle('seleccionar-archivo', async () => {
     return result.canceled ? null : result.filePaths[0];
 });
 
+// Probar conexión a una IP y obtener modelos (Setup inicial y Ajustes)
+ipcMain.handle('test-conexion-ollama', async (event, hostAProbar) => {
+    let cleanHost = (hostAProbar || '').trim().replace(/^https?:\/\//i, '').replace(/\/$/, '');
+    if (!cleanHost.includes(':')) cleanHost += ':11434';
+
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000); // 4 seg timeout
+
+        const res = await fetch(`http://${cleanHost}/api/tags`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (!res.ok) throw new Error(`Ollama respondió con error HTTP ${res.status}`);
+
+        const data = await res.json();
+        const modelos = data.models ? data.models.map(m => m.name) : [];
+        return { success: true, modelos, host: cleanHost };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+
+// Guardar IP confirmada por el usuario
+ipcMain.handle('guardar-config-ip', async (event, { host, model }) => {
+    config.guardarConfig({ host, model });
+    return { success: true, host: config.ollamaHost, model: config.currentModel };
+});
+
 // Obtener lista de modelos de Ollama
 ipcMain.handle('obtener-modelos', async () => {
     const modelos = await listarModelosOllama();
     return {
         modelos,
-        modeloActual: config.currentModel
+        modeloActual: config.currentModel,
+        hostActual: config.ollamaHost
     };
 });
 

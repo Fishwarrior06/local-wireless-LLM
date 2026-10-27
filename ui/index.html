@@ -30,16 +30,40 @@
         </div>
       </div>
 
-      <!-- Selector de Modelos Antigravity Capsule -->
+      <!-- Selector de Modelos y Ajustes -->
       <div class="model-selector-container">
         <div class="model-pill">
           <span class="status-dot"></span>
           <select id="select-modelo" title="Seleccionar modelo de inferencia">
-            <option value="">Conectando con Ollama...</option>
+            <option value="">Conectando...</option>
           </select>
         </div>
+        <button id="btn-abrir-ajustes" class="btn-settings" title="Configurar IP de Tailscale / Servidor">⚙️</button>
       </div>
     </header>
+
+    <!-- Modal de Configuración y Setup Inicial -->
+    <div id="modal-ajustes">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <div class="modal-title">Configuración de Tailscale</div>
+          <button id="btn-cerrar-modal" class="btn-icon-subtle" title="Cerrar">✕</button>
+        </div>
+        <div class="modal-desc">
+          Ingresa la dirección IP de Tailscale de la máquina donde tienes corriendo Ollama (GPU/NPU).
+        </div>
+        <div class="modal-field">
+          <label class="modal-label">IP de Tailscale / Host Ollama</label>
+          <input type="text" id="input-tailscale-ip" class="modal-input" placeholder="ej. 100.83.114.11:11434" spellcheck="false" autocomplete="off" />
+        </div>
+        <div id="modal-status" class="modal-status"></div>
+        <div id="modal-model-list" class="modal-model-list" style="display: none;"></div>
+        <div class="modal-actions">
+          <button id="btn-cancelar-modal" class="btn-secondary">Cancelar</button>
+          <button id="btn-test-conectar" class="btn-primary">Probar y Guardar</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Overlay de Drag & Drop -->
     <div id="drop-overlay">
@@ -81,12 +105,106 @@
   const btnNuevaSesion = document.getElementById('btn-nueva-sesion');
   const slashPopup = document.getElementById('slash-popup');
   const selectModelo = document.getElementById('select-modelo');
+  const modalAjustes = document.getElementById('modal-ajustes');
+  const btnAbrirAjustes = document.getElementById('btn-abrir-ajustes');
+  const btnCerrarModal = document.getElementById('btn-cerrar-modal');
+  const btnCancelarModal = document.getElementById('btn-cancelar-modal');
+  const btnTestConectar = document.getElementById('btn-test-conectar');
+  const inputTailscaleIP = document.getElementById('input-tailscale-ip');
+  const modalStatus = document.getElementById('modal-status');
+  const modalModelList = document.getElementById('modal-model-list');
   
   // Estado de Sesiones
   let sesiones = [{ id: 1, titulo: 'Chat Principal', mensajes: [] }];
   let sesionActivaId = 1;
   let currentIaMessage = null;
   let estaGenerando = false;
+  let hostConfigurado = "";
+
+  // =========================================================================
+  // Control del Modal de Ajustes & Setup Inicial
+  // =========================================================================
+
+  function abrirModalAjustes(mensajeInicial = "") {
+    inputTailscaleIP.value = hostConfigurado || "";
+    modalStatus.className = "modal-status";
+    modalStatus.innerHTML = mensajeInicial ? `<span>${mensajeInicial}</span>` : "";
+    modalModelList.style.display = "none";
+    modalModelList.innerHTML = "";
+    modalAjustes.classList.add('visible');
+    setTimeout(() => inputTailscaleIP.focus(), 100);
+  }
+
+  function cerrarModalAjustes() {
+    modalAjustes.classList.remove('visible');
+  }
+
+  btnAbrirAjustes.addEventListener('click', () => abrirModalAjustes());
+  btnCerrarModal.addEventListener('click', cerrarModalAjustes);
+  btnCancelarModal.addEventListener('click', cerrarModalAjustes);
+
+  // Probar y Conectar a la IP de Tailscale
+  btnTestConectar.addEventListener('click', async () => {
+    const ipIngresada = inputTailscaleIP.value.trim();
+    if (!ipIngresada) {
+      modalStatus.className = "modal-status error";
+      modalStatus.innerText = "Por favor ingresa una IP o dominio.";
+      return;
+    }
+
+    modalStatus.className = "modal-status cargando";
+    modalStatus.innerText = "⏳ Conectando con Ollama...";
+    btnTestConectar.disabled = true;
+
+    try {
+      const res = await window.api.testConexionOllama(ipIngresada);
+      if (res.success) {
+        modalStatus.className = "modal-status exito";
+        modalStatus.innerText = `✓ Conexión exitosa. ${res.modelos.length} modelo(s) encontrado(s):`;
+        
+        // Mostrar lista de modelos encontrados
+        modalModelList.style.display = "flex";
+        modalModelList.innerHTML = res.modelos.map(m => `<span class="modal-chip">${m}</span>`).join('');
+
+        // Guardar configuración persistente
+        const modeloPreferido = res.modelos[0] || "qwen3.5:4b";
+        await window.api.guardarConfigIP({ host: res.host, model: modeloPreferido });
+        hostConfigurado = res.host;
+
+        // Actualizar selector de la barra principal
+        selectModelo.innerHTML = '';
+        res.modelos.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m;
+          opt.textContent = m;
+          if (m === modeloPreferido) opt.selected = true;
+          selectModelo.appendChild(opt);
+        });
+
+        setTimeout(() => {
+          cerrarModalAjustes();
+          agregarBurbujaSistema(`Conectado a Tailscale: ${res.host} [${modeloPreferido}]`);
+        }, 1200);
+
+      } else {
+        modalStatus.className = "modal-status error";
+        modalStatus.innerText = `✕ Error: ${res.error}. Verifica que Ollama esté corriendo y Tailscale activo.`;
+      }
+    } catch (e) {
+      modalStatus.className = "modal-status error";
+      modalStatus.innerText = `✕ Error de red: ${e.message}`;
+    } finally {
+      btnTestConectar.disabled = false;
+    }
+  });
+
+  // Enter dentro del input del modal
+  inputTailscaleIP.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      btnTestConectar.click();
+    }
+  });
 
   // Comandos del Sistema
   const COMANDOS_SISTEMA = [
@@ -108,13 +226,20 @@
   async function inicializarModelos() {
     try {
       const data = await window.api.obtenerModelos();
+      hostConfigurado = data ? data.hostActual : "";
+
+      // Si no hay host configurado o está vacío, abrir el Setup Inicial
+      if (!hostConfigurado) {
+        abrirModalAjustes("👋 ¡Bienvenido! Ingresa la IP de Tailscale de tu PC con Ollama para comenzar.");
+        return;
+      }
+
       selectModelo.innerHTML = '';
       
       let lista = (data && data.modelos && data.modelos.length > 0) 
         ? data.modelos 
         : ['qwen3.5:4b', 'qwen3-coder', 'gemma4:12b'];
       
-      // Asegurarse de que el modelo actual esté en la lista
       if (data && data.modeloActual && !lista.includes(data.modeloActual)) {
         lista.unshift(data.modeloActual);
       }
@@ -128,12 +253,7 @@
       });
     } catch (err) {
       console.error("Error al conectar con modelos:", err);
-      // Fallback con los modelos instalados/en descarga
-      selectModelo.innerHTML = `
-        <option value="qwen3.5:4b">qwen3.5:4b</option>
-        <option value="qwen3-coder">qwen3-coder</option>
-        <option value="gemma4:12b">gemma4:12b</option>
-      `;
+      abrirModalAjustes("⚠️ No se pudo conectar al host Ollama. Verifica tu IP.");
     }
   }
 

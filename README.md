@@ -1,270 +1,156 @@
-# local-wireless-LLM
+# ⚡ Local Wireless LLM
 
-> **An extension of your Local LLM now available everywhere**  
-> Conecta tu Mac de forma inalámbrica a tu propio servidor de modelos de lenguaje local (Ollama) a través de tu red privada (Tailscale o LAN), con una interfaz nativa de escritorio en Electron y un agente interactivo por consola.
+> **Tu modelo de lenguaje local, acelerado por hardware remoto, disponible en tu Mac de forma inalámbrica.**
 
----
-
-## 📋 Tabla de Contenidos
-
-1. [Descripción General](#-descripción-general)
-2. [Arquitectura](#-arquitectura)
-3. [Requisitos Previos](#-requisitos-previos)
-4. [Instalación en macOS](#-instalación-en-macos)
-5. [Configuración del Servidor Host (Ollama)](#-configuración-del-servidor-host-ollama)
-6. [Variables de Entorno (`.env`)](#-variables-de-entorno-env)
-7. [Modos de Uso](#-modos-de-uso)
-   - [1. Aplicación de Escritorio (Electron)](#1-aplicación-de-escritorio-electron)
-   - [2. Agente de Consola (CLI)](#2-agente-de-consola-cli)
-8. [Comandos y Sintaxis Especial](#-comandos-y-sintaxis-especial)
-9. [Estructura del Proyecto](#-estructura-del-proyecto)
-10. [Solución de Problemas Comunes](#-solución-de-problemas-comunes)
+![macOS](https://img.shields.io/badge/macOS-Sonoma%20%2F%20Sequoia-000000?style=flat&logo=apple&logoColor=white)
+![Electron](https://img.shields.io/badge/Electron-Desktop-47848F?style=flat&logo=electron&logoColor=white)
+![Ollama](https://img.shields.io/badge/Inferencia-Ollama-white?style=flat&logo=ollama&logoColor=black)
+![Tailscale](https://img.shields.io/badge/Red-Tailscale%20WireGuard-202324?style=flat&logo=tailscale&logoColor=white)
 
 ---
 
-## 🚀 Descripción General
+## 🧭 ¿Qué es Local Wireless LLM?
 
-**local-wireless-LLM** permite aprovechar la potencia de procesamiento de un equipo anfitrión (por ejemplo, una PC de escritorio con GPU dedicada o un servidor local ejecutando Ollama) desde cualquier MacBook o Mac conectada a través de una red mallada privada y cifrada con [Tailscale](https://tailscale.com/) o mediante tu red WiFi local.
+**Local Wireless LLM** es una aplicación de escritorio nativa para macOS diseñada bajo un **modelo híbrido**:
 
-El proyecto incluye dos clientes:
-- **Desktop App (Electron):** Interfaz gráfica minimalista en modo oscuro con diseño nativo de macOS (ventana sin bordes, botones integrados en la barra de título, soporte para arrastrar archivos y múltiples sesiones de chat).
-- **CLI Agent (`agents.js`):** Interfaz ligera de terminal con salida en streaming por colores utilizando `chalk`.
-
----
-
-## 🏗 Arquitectura
-
-```text
-┌─────────────────────────┐               Tailscale VPN / LAN             ┌─────────────────────────┐
-│     Macbook / Mac       │  ◄────────────────────────────────────────►  │      PC / Servidor      │
-│                         │                                               │                         │
-│  - App Electron (GUI)   │         HTTP POST /api/generate               │  - Ollama Server        │
-│  - Agente CLI (Node.js) │         (Streaming Text chunks)               │  - GPU Acceleration    │
-│  - Sistema de archivos  │                                               │  - Modelos (Qwen, etc.) │
-└─────────────────────────┘                                               └─────────────────────────┘
+```
+┌─────────────────────────────────┐                 ┌─────────────────────────────────┐
+│     MACBOOK AIR / PRO           │                 │       PC / SERVIDOR ANFITRIÓN   │
+│     (Cuerpo del Agente)         │                 │       (Cerebro de Inferencia)   │
+│                                 │                 │                                 │
+│  • UI nativa translúcida        │    Tailscale    │  • Aceleración GPU/NPU          │
+│  • Acceso al sistema de archivos│ ◄─────────────► │  • Servidor Ollama              │
+│  • Ejecución autónoma y Skills  │    WireGuard    │  • Modelos: qwen3-coder,        │
+│  • Sin drenar batería ni RAM    │   (Cifrado P2P) │    gemma4:12b, qwen3.5, etc.    │
+└─────────────────────────────────┘                 └─────────────────────────────────┘
 ```
 
----
-
-## 📦 Requisitos Previos
-
-### En tu Mac (Cliente):
-- **macOS:** Compatible con Apple Silicon (M1/M2/M3/M4) e Intel.
-- **Node.js:** Versión 18.0.0 o superior (recomendado Node.js 20 LTS o 22). Verifica con `node -v`.
-- **npm:** Incluido con Node.js. Verifica con `npm -v`.
-- **Tailscale (o red local):** Instalado y autenticado en tu cuenta de Tailscale.
-
-### En la PC o Servidor (Host con Ollama):
-- [Ollama](https://ollama.ai/) instalado y funcionando.
-- Modelo descargado (por ejemplo, `qwen3.5:4b`, `llama3.2`, `mistral`, etc.).
-- Conexión a Tailscale activa en la misma cuenta / tailnet.
-- **Ollama escuchando en red:** Por defecto Ollama solo escucha en `127.0.0.1`. Debe configurarse para escuchar en `0.0.0.0:11434` (ver sección [Configuración del Servidor Host](#-configuración-del-servidor-host-ollama)).
+Esta arquitectura te permite tener **modelos pesados de 12B o 32B parámetros** programando o editando repositorios desde una laptop ligera, sin que se caliente ni gaste batería.
 
 ---
 
-## 💻 Instalación en macOS
+## 🚀 Guía de Configuración Inicial (Paso a Paso)
 
-Sigue estos pasos en cualquier Mac donde desees instalar y ejecutar el proyecto:
+### 1. Preparar el Servidor / PC Anfitrión (Ollama)
 
-### 1. Clonar el repositorio
-Abre la aplicación **Terminal** en tu Mac y clona el proyecto:
+En la máquina que tiene la tarjeta gráfica dedicada (GPU Nvidia/AMD/Apple Silicon o NPU):
 
-```bash
-git clone https://github.com/Taggie-Technologies/local-wireless-LLM.git
-cd local-wireless-LLM
-```
-
-*(Si lo recibiste como archivo zip o carpeta, simplemente descomprímelo y entra a la carpeta desde la terminal)*.
-
-### 2. Instalar dependencias de Node.js
-Ejecuta el siguiente comando para instalar las librerías necesarias (Electron, Chalk, Dotenv):
-
-```bash
-npm install
-```
-
-### 3. Configurar el archivo de entorno (`.env`)
-Copia la plantilla de ejemplo `.env.example` para crear tu propio archivo `.env`:
-
-```bash
-cp .env.example .env
-```
-
-Abre `.env` con tu editor preferido (o con `nano .env` / `code .env`) y define la IP de Tailscale de tu servidor host y el modelo a utilizar:
-
-```env
-OLLAMA_HOST="100.x.x.x:11434"
-OLLAMA_MODEL="qwen3.5:4b"
-```
-
-> 💡 **Nota:** La IP `100.x.x.x` corresponde a la dirección IP privada que Tailscale le asigna a tu máquina host. Puedes encontrarla abriendo la app de Tailscale en tu host o en [login.tailscale.com/admin/machines](https://login.tailscale.com/admin/machines).
-
----
-
-## 🖥 Configuración del Servidor Host (Ollama)
-
-Para que tu Mac pueda conectarse a Ollama a través de la red, el host debe aceptar conexiones externas:
-
-### En Linux (systemd):
-1. Edita el servicio de systemd:
+1. **Instala Ollama:** Descárgalo desde [ollama.ai](https://ollama.ai).
+2. **Permite conexiones desde la red:** Por defecto, Ollama solo escucha en `localhost`. Debes configurarlo para escuchar en todas las interfaces de red:
+   - **En Windows (PowerShell como Administrador):**
+     ```powershell
+     [System.Environment]::SetEnvironmentVariable('OLLAMA_HOST', '0.0.0.0:11434', 'User')
+     ```
+     *(Reinicia Ollama desde el área de notificaciones).*
+   - **En Linux / macOS:**
+     ```bash
+     export OLLAMA_HOST=0.0.0.0:11434
+     ollama serve
+     ```
+3. **Descarga tus modelos favoritos:**
    ```bash
-   sudo systemctl edit ollama.service
+   ollama run qwen3-coder
+   ollama run gemma4:12b
+   ollama run qwen3.5:4b
    ```
-2. Agrega bajo la sección `[Service]`:
-   ```ini
-   [Service]
-   Environment="OLLAMA_HOST=0.0.0.0"
-   ```
-3. Guarda y recarga el servicio:
-   ```bash
-   sudo systemctl daemon-reload
-   sudo systemctl restart ollama
-   ```
-
-### En Windows:
-1. Abre **Configuración del sistema** > **Variables de entorno**.
-2. Agrega una variable de usuario o del sistema:
-   - Nombre: `OLLAMA_HOST`
-   - Valor: `0.0.0.0`
-3. Cierra Ollama desde la bandeja del sistema (ícono al lado del reloj) y vuelve a abrirlo.
-
-### En macOS (Servidor):
-Si tu host es otra Mac con Apple Silicon ejecutando Ollama:
-```bash
-launchctl setenv OLLAMA_HOST "0.0.0.0"
-# O ejecuta Ollama en primer plano en una terminal:
-OLLAMA_HOST=0.0.0.0 ollama serve
-```
 
 ---
 
-## ⚙️ Variables de Entorno (`.env`)
+### 2. Conectar la Mac y la PC con Tailscale
 
-| Variable | Descripción | Ejemplo |
+[Tailscale](https://tailscale.com/) crea una red privada cifrada punto a punto (WireGuard) sin necesidad de abrir puertos en tu router ni configurar IP fija.
+
+1. Instala **Tailscale** tanto en tu PC servidora como en tu Mac.
+2. Inicia sesión con la misma cuenta en ambos dispositivos.
+3. Copia la **IP de Tailscale de la PC servidora** (empieza con `100.x.y.z`, ej. `100.83.114.11`).
+
+---
+
+### 3. Iniciar la Aplicación en la Mac
+
+No necesitas tocar ningún archivo de configuración. La aplicación cuenta con un **Asistente de Primer Inicio (Setup Wizard)**:
+
+1. Clona el repositorio e instala las dependencias:
+   ```bash
+   git clone https://github.com/tu-usuario/local-wireless-LLM.git
+   cd local-wireless-LLM
+   npm install
+   ```
+2. Inicia la app:
+   ```bash
+   npm start
+   ```
+3. **Setup Automático:** Al abrir por primera vez, verás la ventana nativa de configuración:
+   - Pega tu IP de Tailscale (ejemplo: `100.83.114.11:11434`).
+   - Pulsa **"Probar y Guardar"**.
+   - La app se conectará automáticamente, listará todos los modelos que tienes instalados en Ollama y los dejará listos en el selector superior.
+
+> 💡 **¿Cambió tu IP de Tailscale?**
+> No necesitas recompilar ni editar archivos. Haz clic en el icono **⚙️** en la barra superior junto al selector de modelos para cambiar la IP o volver a escanear tus modelos en cualquier momento.
+
+---
+
+## 🛠️ Comandos del Sistema (`/`)
+
+Al presionar `/` en el campo de texto aparece un menú contextual flotante con autocompletado:
+
+| Comando | Tipo | Descripción |
 | :--- | :--- | :--- |
-| `OLLAMA_HOST` | Dirección IP y puerto del servidor Ollama (IP de Tailscale o LAN). | `100.83.114.11:11434` |
-| `OLLAMA_MODEL` | Nombre del modelo que Ollama tiene descargado localmente. | `qwen3.5:4b`, `llama3.2:3b` |
+| `/lee <archivo\|carpeta>` | Lectura | Inyecta el contenido de un archivo o directorio en el contexto del modelo. |
+| `/lee-repo [pregunta]` | Lectura | Empaqueta todo el repositorio local (respetando filtros) y responde sobre él. |
+| `/lee-carpeta <dir>` | Lectura | Analiza recursivamente cualquier carpeta en tu Mac. |
+| `/edita <archivo> <instrucción>` | Escritura | Modifica un archivo y guarda los cambios de inmediato en el disco. |
+| `/edita-repo <instrucción>` | Escritura | Analiza el repositorio completo y modifica múltiples archivos de forma autónoma. |
 
 ---
 
-## 🎮 Modos de Uso
+## 🧠 Ecosistema de Skills (`skills/`)
 
-### 1. Aplicación de Escritorio (Electron)
+Puedes enseñarle nuevas habilidades a tu modelo creando archivos Markdown en la carpeta `skills/`.
 
-Inicia la aplicación gráfica ejecutando:
+Ejemplo: `skills/refactorizar.md`
+```markdown
+---
+name: refactorizar
+description: Aplica Clean Code y SOLID sin alterar la interfaz pública.
+triggers: ["refactorizar", "clean-code", "modularizar"]
+---
+# Instrucciones de la Skill:
+1. Divide funciones complejas de más de 30 líneas.
+2. Prioriza inmutabilidad y nombres expresivos.
+```
+
+### Formas de uso:
+- **Slash directo:** Escribe `/refactorizar` y la skill se cargará en el prompt.
+- **Inferencia contextual:** Si dices *"Oye, ayúdame a refactorizar este componente"*, el agente detecta la palabra clave y aplica automáticamente la skill correspondiente.
+
+---
+
+## 🖥️ Modo CLI (Terminal Interactiva)
+
+Si prefieres trabajar desde la terminal sin interfaz gráfica:
 
 ```bash
-npm start
+npm run cli
 ```
 
-#### Características de la interfaz:
-- **Diseño nativo para macOS:** Ventana oscura con esquinas redondeadas y controles de ventana (`traffic lights`) integrados.
-- **Panel lateral de sesiones:** Botón `+` para crear nuevas conversaciones independientes.
-- **Streaming en tiempo real:** Respuestas fluidas mientras se van generando token por token.
-- **Botón de pánico:** Botón rojo **Detener ⏹** para abortar de inmediato cualquier respuesta en curso.
-- **Carga de archivos:**
-  - Botón **`+`** junto a la caja de texto para abrir el selector nativo de archivos de macOS.
-  - **Drag & Drop:** Arrastra cualquier archivo directamente a la ventana de la aplicación.
-- **Edición rápida de mensajes:** Haz clic en cualquiera de tus mensajes previos para cargarlo de nuevo en la caja de entrada.
+- Soporta todos los comandos `/lee`, `/edita` y `/edita-repo`.
+- Puedes cambiar de modelo en caliente escribiendo `/modelo qwen3-coder`.
 
 ---
 
-### 2. Agente de Consola (CLI)
+## 📦 Compilar y Empaquetar la App (.dmg para macOS)
 
-Si prefieres trabajar directamente desde la terminal de macOS:
+Para generar la aplicación nativa lista para arrastrar a tu carpeta `/Applications`:
 
 ```bash
-node agents.js
+npm run dist:mac
 ```
 
-El CLI te permite dialogar en streaming coloreado (`chalk`) y acepta los mismos comandos de lectura de archivos. Para salir, escribe `salir` o `exit`.
-
----
-
-## 🪄 Comandos y Sintaxis Especial
-
-Tanto en la aplicación de escritorio como en el agente por consola puedes usar comandos especiales para interactuar directamente con los archivos locales de tu Mac:
-
-### 1. Analizar / Leer un archivo o carpeta (`lee`)
-Carga el contenido de un archivo (o los archivos de una carpeta) en memoria y lo envía al modelo:
-
-```text
-lee ruta/del/archivo.js Explica qué hace esta función
-```
-o con rutas con comillas y espacios:
-```text
-lee "/Users/usuario/Desktop/mi script.py" Optimiza el uso de memoria
-```
-Si la ruta corresponde a una carpeta, se leerá automáticamente como directorio:
-```text
-lee ./src Explica qué componentes existen aquí
-```
-
-### 2. Analizar todo el repositorio actual (`lee-repo`)
-Recorre el proyecto actual, ignora `node_modules`, `.git` y archivos pesados/sensibles, y envía la estructura y archivos relevantes al modelo:
-
-```text
-lee-repo Explica la arquitectura global de este proyecto
-```
-
-### 3. Analizar una carpeta específica (`lee-carpeta`)
-Lee recursivamente los archivos de código dentro de la carpeta indicada:
-
-```text
-lee-carpeta src/controllers Analiza la lógica de controladores
-```
-
-### 4. Editar y sobreescribir automáticamente un archivo (`edita`)
-*(Disponible en la aplicación Electron)*  
-Lee el archivo objetivo, instruye al modelo para que genere el código modificado y **guarda automáticamente los cambios en el archivo en tu disco**:
-
-```text
-edita index.js Agrega manejo de errores con try/catch en la función principal
-```
-
-> ⚠️ **Precaución al usar `edita`:** El comando sobreescribe el archivo especificado directamente con la salida generada por el modelo. Se recomienda tener control de versiones (Git) o una copia de respaldo antes de ejecutarlo.
-
----
-
-## 📁 Estructura del Proyecto
-
-```text
-local-wireless-LLM/
-├── .env.example       # Plantilla de variables de entorno para nuevas máquinas
-├── .gitignore          # Archivos excluidos de Git (node_modules, .env)
-├── AGENTS.md           # Especificación y documentación de los agentes del sistema
-├── README.md           # Guía de instalación y uso en macOS
-├── LICENSE             # Licencia del proyecto
-├── package.json        # Dependencias y scripts de npm
-├── main.js             # Proceso principal de Electron (IPC, I/O de archivos, fetch a Ollama)
-├── preload.js          # Puente seguro contextBridge entre Electron y el frontend
-├── index.html          # Interfaz de usuario (HTML y lógica del cliente)
-├── styles.css          # Estilos CSS modernos optimizados para macOS
-└── agents.js           # Agente CLI interactivo para terminal
-```
-
----
-
-## 🛠 Solución de Problemas Comunes
-
-### 1. `[Error de conexión con la PC]` o `FetchError: connect ECONNREFUSED`
-- **Verifica Tailscale:** Asegúrate de que tanto tu Mac como el host tengan Tailscale encendido y estén en la misma red.
-- **Comprueba el ping:** Desde tu Mac, ejecuta en la terminal `ping <IP_TAILSCALE_HOST>`.
-- **Comprueba el puerto de Ollama:** Ejecuta `curl http://<IP_TAILSCALE_HOST>:11434` en tu Mac. Debe responder con `"Ollama is running"`.
-- **Configuración de host:** Asegúrate de que el host tenga configurado `OLLAMA_HOST=0.0.0.0` y no solo `127.0.0.1`.
-
-### 2. `Error: Falta OLLAMA_HOST en el archivo .env`
-- No creaste el archivo `.env`. Ejecuta `cp .env.example .env` y añade los valores correspondientes.
-
-### 3. Error al ejecutar `npm start` en macOS
-- Asegúrate de haber ejecutado `npm install` previamente.
-- Si macOS bloquea Electron o muestra una alerta de seguridad, ve a **Ajustes del Sistema > Privacidad y seguridad** y autoriza la ejecución.
-
-### 4. Permisos de lectura/escritura de archivos
-- Al usar los comandos `lee` o `edita`, asegúrate de proporcionar una ruta accesible por el usuario actual de macOS. Si utilizas rutas relativas, se tomarán a partir del directorio donde se inició la aplicación.
+Esto generará el archivo instalador `.dmg` en la carpeta `dist/`. La app es totalmente portable y conservará tu configuración de Tailscale incluso entre actualizaciones.
 
 ---
 
 ## 📄 Licencia
 
-Este proyecto está bajo los términos de su licencia incluida en el archivo [LICENSE](LICENSE).
+Distribuido bajo la Licencia ISC. Consulta el archivo `LICENSE` para más información.

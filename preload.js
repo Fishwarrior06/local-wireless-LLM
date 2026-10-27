@@ -11,5 +11,9 @@ contextBridge.exposeInMainWorld('api', {
     // Métodos para selector de modelos y skills
     obtenerModelos: () => ipcRenderer.invoke('obtener-modelos'),
     cambiarModelo: (nuevoModelo) => ipcRenderer.invoke('cambiar-modelo', nuevoModelo),
-    obtenerSkills: () => ipcRenderer.invoke('obtener-skills')
+    obtenerSkills: () => ipcRenderer.invoke('obtener-skills'),
+
+    // Setup y configuración de IP Tailscale
+    testConexionOllama: (host) => ipcRenderer.invoke('test-conexion-ollama', host),
+    guardarConfigIP: (datos) => ipcRenderer.invoke('guardar-config-ip', datos)
 });
