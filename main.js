@@ -71,11 +71,6 @@ function createWindow() {
 
     const iconPath = path.join(__dirname, 'ui', 'assets', 'icon.png');
 
-    // Configurar icono en el Dock de macOS
-    if (process.platform === 'darwin' && app.dock && fs.existsSync(iconPath)) {
-        app.dock.setIcon(iconPath);
-    }
-
     mainWindow = new BrowserWindow({
         title: APP_NAME,
         width: 1140,
@@ -111,7 +106,17 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, 'ui', 'index.html'));
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+    // Configurar icono del Dock ANTES de crear la ventana
+    if (process.platform === 'darwin' && app.dock) {
+        const iconPath = path.join(__dirname, 'ui', 'assets', 'icon.png');
+        if (fs.existsSync(iconPath)) {
+            const dockIcon = nativeImage.createFromPath(iconPath);
+            app.dock.setIcon(dockIcon);
+        }
+    }
+    createWindow();
+});
 
 // Detener generación activa
 ipcMain.on('detener-generacion', () => {
