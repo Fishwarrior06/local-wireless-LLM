@@ -26,8 +26,7 @@
       <div class="toolbar-left">
         <button id="toggle-sidebar" title="Alternar barra lateral">◫</button>
         <div class="app-branding">
-          <span class="brand-gradient">ANTIGRAVITY</span>
-          <span style="color: var(--text-tertiary); font-size: 11px;">/ LOCAL</span>
+          <span>Wireless LLM</span>
         </div>
       </div>
 
@@ -270,11 +269,20 @@
     cambiarSesion(nuevaId);
   });
 
+  const mainView = document.getElementById('main-view');
+
   btnToggle.addEventListener('click', () => {
     sidebar.classList.toggle('oculto');
     const estaOculto = sidebar.classList.contains('oculto');
+    
+    // Activa la zona de seguridad para esquivar los semáforos de macOS
+    if (estaOculto) {
+      mainView.classList.add('sidebar-cerrado');
+    } else {
+      mainView.classList.remove('sidebar-cerrado');
+    }
+
     btnToggle.title = estaOculto ? 'Mostrar barra lateral' : 'Ocultar barra lateral';
-    btnToggle.style.color = estaOculto ? 'var(--accent-cyan)' : 'var(--text-secondary)';
   });
 
   // =========================================================================
