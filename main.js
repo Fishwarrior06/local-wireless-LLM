@@ -67,7 +67,10 @@ function configurarMenuMac() {
 }
 
 function setDockIcon() {
-    if (process.platform !== 'darwin' || !app.dock) return;
+    // En app empaquetada (.dmg / .app), el ícono ya está en el bundle (.icns)
+    // y macOS lo gestiona solo. Llamar setIcon() aquí causaría conflictos de timing.
+    // Solo lo forzamos en dev mode para sobrescribir el ícono del binario de Electron.
+    if (process.platform !== 'darwin' || !app.dock || app.isPackaged) return;
     const iconPath = path.join(__dirname, 'ui', 'assets', 'icon.png');
     if (fs.existsSync(iconPath)) {
         app.dock.setIcon(nativeImage.createFromPath(iconPath));
