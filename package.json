@@ -6,9 +6,37 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "cli": "node agents.js",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "build": {
+    "appId": "com.localwireless.llm",
+    "productName": "LocalWirelessLLM",
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": ["dmg", "zip"]
+    },
+    "win": {
+      "target": ["nsis", "portable"]
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "skills/**/*",
+      "ui/**/*",
+      "package.json"
+    ]
+  },
+  "keywords": [
+    "llm",
+    "ollama",
+    "tailscale",
+    "electron",
+    "agent"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
@@ -16,6 +44,7 @@
     "dotenv": "^18.0.9"
   },
   "devDependencies": {
-    "electron": "^45.0.0"
+    "electron": "^45.0.0",
+    "electron-builder": "^26.0.20"
   }
 }

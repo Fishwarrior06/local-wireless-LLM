@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      margin: 0; padding: 0; display: flex; height: 100vh;
+      background: #000000; color: #ECECEC; overflow: hidden;
+    }
+    /* Zona arrastrable de Mac */
+    .drag-region { position: absolute; top: 0; left: 0; right: 0; height: 38px; -webkit-app-region: drag; z-index: 10; }
+    
+    /* Layout principal */
+    #sidebar {
+      width: 260px; background: #0A0A0A; border-right: 1px solid #222;
+      display: flex; flex-direction: column; padding-top: 50px;
+      transition: transform 0.3s ease;
+      position: relative; z-index: 5; flex-shrink: 0;
+    }
+    #sidebar.oculto { transform: translateX(-100%); margin-right: -260px; }
+    
+    .sesion-btn { padding: 12px 20px; color: #888; cursor: pointer; border-bottom: 1px solid #111; font-size: 14px; transition: 0.2s; display: flex; justify-content: space-between; }
+    .sesion-btn:hover { color: #fff; background: #151515; }
+    .sesion-btn.activa { color: #fff; background: #1A1A1A; border-left: 3px solid #0A84FF; padding-left: 17px; }
+    
+    #main-view { flex: 1; display: flex; flex-direction: column; position: relative; min-width: 0; }
+    
+    /* Barra superior con Modelo Activo */
+    #top-bar {
+      height: 48px; border-bottom: 1px solid #1A1A1A; display: flex; align-items: center;
+      justify-content: space-between; padding: 0 20px 0 120px; -webkit-app-region: drag;
+      background: rgba(10,10,10,0.8); backdrop-filter: blur(10px); z-index: 15;
+    }
+    #toggle-sidebar {
+      position: absolute; top: 12px; left: 80px; z-index: 20; -webkit-app-region: no-drag;
+      background: none; border: none; color: #888; cursor: pointer; font-size: 18px;
+    }
+    #toggle-sidebar:hover { color: #fff; }
+
+    /* Selector de Modelos */
+    .model-selector-container {
+      display: flex; align-items: center; gap: 8px; -webkit-app-region: no-drag;
+    }
+    .model-badge {
+      background: #161616; border: 1px solid #2A2A2A; color: #AAA; font-size: 11px;
+      padding: 3px 8px; border-radius: 12px; font-weight: 500; display: flex; align-items: center; gap: 6px;
+    }
+    .model-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: #30D158; }
+    select#select-modelo {
+      background: #141414; color: #ECECEC; border: 1px solid #2C2C2C; border-radius: 8px;
+      padding: 5px 12px; font-size: 13px; font-weight: 500; outline: none; cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    select#select-modelo:hover { border-color: #0A84FF; background: #1B1B1B; }
+    select#select-modelo:focus { border-color: #0A84FF; }
+
+    /* Chat y Mensajes */
+    #chat-wrapper { flex: 1; overflow-y: auto; display: flex; justify-content: center; }
+    #chat { width: 100%; max-width: 900px; padding: 25px 40px 20px; display: flex; flex-direction: column; gap: 16px; }
+    .mensaje { padding: 14px 18px; border-radius: 12px; max-width: 85%; line-height: 1.6; position: relative; font-size: 15px; word-wrap: break-word; }
+    .yo { background: #1A1A1A; align-self: flex-end; cursor: pointer; border: 1px solid #333; transition: border 0.2s; }
+    .yo:hover { border-color: #555; }
+    .yo::after { content: '✎'; position: absolute; right: -25px; top: 12px; font-size: 11px; color: #666; opacity: 0; transition: opacity 0.2s; }
+    .yo:hover::after { opacity: 1; }
+    .ia { background: #000; align-self: flex-start; border-left: 3px solid #333; padding-left: 20px; white-space: pre-wrap; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; }
+    
+    /* Controles inferiores */
+    #input-container { padding: 20px 40px; background: rgba(0,0,0,0.9); display: flex; gap: 10px; align-items: flex-end; justify-content: center; }
+    #input-inner { display: flex; gap: 10px; width: 100%; max-width: 900px; }
+    #btn-archivo {
+      background: #1A1A1A; border: 1px solid #333; color: #fff; width: 45px; height: 45px;
+      border-radius: 8px; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    #btn-archivo:hover { background: #2A2A2A; border-color: #555; }
+    
+    .input-wrapper { flex: 1; position: relative; display: flex; }
+    textarea {
+      width: 100%; padding: 14px 50px 14px 14px; border-radius: 8px; border: 1px solid #333;
+      background: #0A0A0A; color: white; outline: none; font-size: 15px; resize: none;
+      min-height: 20px; max-height: 180px; overflow-y: auto; font-family: inherit; line-height: 1.5;
+    }
+    textarea:focus { border-color: #555; }
+    
+    #btn-stop {
+      position: absolute; right: 8px; bottom: 8px; background: #FF3B30; color: white;
+      border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: bold;
+      cursor: pointer; display: none;
+    }
+
+    /* Slash Commands Popup */
+    #slash-popup {
+      display: none; position: absolute; bottom: 100%; left: 0; right: 0; margin-bottom: 6px;
+      background: #111; border: 1px solid #333; border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+      overflow: hidden; z-index: 200; max-height: 280px; overflow-y: auto;
+    }
+    #slash-popup.visible { display: block; }
+    .slash-item {
+      padding: 10px 16px; cursor: pointer; border-left: 3px solid transparent; transition: 0.1s;
+    }
+    .slash-item:hover, .slash-item.selected {
+      background: #1E1E1E; border-left-color: #0A84FF;
+    }
+    .slash-item-cmd { font-weight: bold; color: #FFFFFF; font-size: 14px; }
+    .slash-item-badge { background: #0A84FF22; color: #0A84FF; font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-left: 6px; text-transform: uppercase; font-weight: 700; }
+    .slash-item-args { color: #777; font-size: 13px; margin-left: 6px; }
+    .slash-item-desc { color: #555; font-size: 12px; margin-top: 3px; }
+
+    /* Drag & Drop Overlay */
+    #drop-overlay {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85);
+      z-index: 100; display: none; align-items: center; justify-content: center;
+      border: 2px dashed #0A84FF; margin: 20px; border-radius: 16px;
+    }
+    #drop-overlay.drag-active { display: flex; }
+    #drop-overlay p { font-size: 24px; color: #0A84FF; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="drag-region"></div>
+  
+  <!-- Panel de Sesiones -->
+  <div id="sidebar">
+    <div style="padding: 0 20px 15px; display: flex; justify-content: space-between; align-items: center;">
+      <span style="color: #666; font-weight: bold; font-size: 12px; letter-spacing: 1px; text-transform: uppercase;">Chats</span>
+      <button id="btn-nueva-sesion" style="background: none; border: none; color: #0A84FF; cursor: pointer; font-size: 22px; padding: 0; line-height: 1;">+</button>
+    </div>
+    <div id="lista-sesiones"></div>
+  </div>
+
+  <!-- Vista Principal -->
+  <div id="main-view">
+    <button id="toggle-sidebar">☰</button>
+
+    <!-- Barra Superior: Selector de Modelos -->
+    <div id="top-bar">
+      <div style="font-size: 12px; color: #555; font-weight: 600; letter-spacing: 0.5px;">LOCAL WIRELESS LLM</div>
+      <div class="model-selector-container">
+        <div class="model-badge"><span class="dot"></span> Online</div>
+        <select id="select-modelo">
+          <option value="">Cargando modelos...</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="drop-overlay"><p>Suelta el archivo aquí para leerlo</p></div>
+    
+    <div id="chat-wrapper">
+      <div id="chat"></div>
+    </div>
+    
+    <div id="input-container">
+      <div id="input-inner">
+        <button id="btn-archivo">+</button>
+        <div class="input-wrapper">
+          <div id="slash-popup"></div>
+          <textarea id="prompt" rows="1" placeholder="Escribe / para ver comandos y skills..."></textarea>
+          <button id="btn-stop">Detener ⏹</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const chat = document.getElementById('chat');
+  const input = document.getElementById('prompt');
+  const btnStop = document.getElementById('btn-stop');
+  const btnArchivo = document.getElementById('btn-archivo');
+  const sidebar = document.getElementById('sidebar');
+  const btnToggle = document.getElementById('toggle-sidebar');
+  const dropOverlay = document.getElementById('drop-overlay');
+  const listaSesiones = document.getElementById('lista-sesiones');
+  const btnNuevaSesion = document.getElementById('btn-nueva-sesion');
+  const slashPopup = document.getElementById('slash-popup');
+  const selectModelo = document.getElementById('select-modelo');
+  
+  // ESTADO DE SESIONES
+  let sesiones = [{ id: 1, titulo: 'Chat Principal', mensajes: [] }];
+  let sesionActivaId = 1;
+  let currentIaMessage = null;
+  let estaGenerando = false;
+
+  // COMANDOS BASE
+  let COMANDOS_BASE = [
+    { cmd: '/lee',        args: '<archivo|carpeta>',      desc: 'Lee archivo o carpeta y lo inyecta como contexto', tipo: 'cmd' },
+    { cmd: '/lee-repo',   args: '[pregunta]',              desc: 'Carga todo el repositorio actual como contexto', tipo: 'cmd' },
+    { cmd: '/lee-carpeta',args: '<directorio>',            desc: 'Carga una carpeta completa como contexto', tipo: 'cmd' },
+    { cmd: '/edita',      args: '<archivo> <instrucción>', desc: 'Edita un archivo y guarda los cambios en disco', tipo: 'cmd' },
+    { cmd: '/edita-repo', args: '<instrucción>',           desc: 'Edita múltiples archivos del repo de forma autónoma', tipo: 'cmd' },
+  ];
+
+  let listaComandosYSkills = [...COMANDOS_BASE];
+  let selectedIndex = -1;
+  let filteredCommands = [];
+
+  // CARGAR MODELOS DESDE OLLAMA
+  async function inicializarModelos() {
+    try {
+      const data = await window.api.obtenerModelos();
+      selectModelo.innerHTML = '';
+      
+      const modelos = data.modelos && data.modelos.length > 0 ? data.modelos : [data.modeloActual];
+      modelos.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        if (m === data.modeloActual) opt.selected = true;
+        selectModelo.appendChild(opt);
+      });
+
+      selectModelo.addEventListener('change', async (e) => {
+        const nuevo = e.target.value;
+        await window.api.cambiarModelo(nuevo);
+        // Notificar en el chat
+        const sesionActual = sesiones.find(s => s.id === sesionActivaId);
+        const aviso = `⚡ Modelo cambiado a: ${nuevo}`;
+        sesionActual.mensajes.push({ rol: 'ia', texto: aviso });
+        crearBurbujaDOM('ia', aviso);
+      });
+    } catch (err) {
+      console.error("Error obteniendo modelos:", err);
+    }
+  }
+
+  // CARGAR SKILLS DINÁMICAMENTE DESDE skills/
+  async function inicializarSkills() {
+    try {
+      const skills = await window.api.obtenerSkills();
+      const skillsMapeadas = skills.map(s => ({
+        cmd: `/${s.nombre}`,
+        args: '<instrucción>',
+        desc: s.descripcion,
+        tipo: 'skill'
+      }));
+      listaComandosYSkills = [...COMANDOS_BASE, ...skillsMapeadas];
+    } catch (err) {
+      console.error("Error obteniendo skills:", err);
+    }
+  }
+
+  function getSlashToken(value) {
+    const match = value.match(/^(\/\S*)/);
+    return match ? match[1] : null;
+  }
+
+  function actualizarPopup() {
+    const value = input.value;
+    const token = getSlashToken(value);
+
+    if (!token || value.includes(' ')) {
+      ocultarPopup();
+      return;
+    }
+
+    filteredCommands = listaComandosYSkills.filter(c => c.cmd.startsWith(token));
+
+    if (filteredCommands.length === 0) {
+      ocultarPopup();
+      return;
+    }
+
+    if (selectedIndex >= filteredCommands.length) selectedIndex = filteredCommands.length - 1;
+
+    renderPopup();
+    slashPopup.classList.add('visible');
+  }
+
+  function renderPopup() {
+    slashPopup.innerHTML = '';
+    filteredCommands.forEach((c, i) => {
+      const item = document.createElement('div');
+      item.className = 'slash-item' + (i === selectedIndex ? ' selected' : '');
+      
+      const badge = c.tipo === 'skill' ? '<span class="slash-item-badge">SKILL</span>' : '';
+      item.innerHTML =
+        '<div><span class="slash-item-cmd">' + c.cmd + '</span>' + badge +
+        '<span class="slash-item-args">' + c.args + '</span></div>' +
+        '<div class="slash-item-desc">' + c.desc + '</div>';
+        
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        seleccionarComando(i);
+      });
+      slashPopup.appendChild(item);
+    });
+  }
+
+  function ocultarPopup() {
+    slashPopup.classList.remove('visible');
+    slashPopup.innerHTML = '';
+    selectedIndex = -1;
+    filteredCommands = [];
+  }
+
+  function seleccionarComando(index) {
+    if (index < 0 || index >= filteredCommands.length) return;
+    input.value = filteredCommands[index].cmd + ' ';
+    ocultarPopup();
+    input.focus();
+    input.style.height = 'auto';
+    input.style.height = input.scrollHeight + 'px';
+  }
+
+  // Sesiones
+  function actualizarSidebar() {
+    listaSesiones.innerHTML = '';
+    sesiones.forEach((sesion) => {
+      const div = document.createElement('div');
+      div.className = `sesion-btn ${sesion.id === sesionActivaId ? 'activa' : ''}`;
+      div.innerText = sesion.titulo;
+      div.onclick = () => cambiarSesion(sesion.id);
+      listaSesiones.appendChild(div);
+    });
+  }
+
+  function cambiarSesion(id) {
+    if (estaGenerando) return;
+    sesionActivaId = id;
+    actualizarSidebar();
+    chat.innerHTML = '';
+    const sesionActual = sesiones.find(s => s.id === sesionActivaId);
+    sesionActual.mensajes.forEach(msg => crearBurbujaDOM(msg.rol, msg.texto));
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  btnNuevaSesion.addEventListener('click', () => {
+    if (estaGenerando) return;
+    const nuevaId = Date.now();
+    sesiones.unshift({ id: nuevaId, titulo: `Chat ${sesiones.length + 1}`, mensajes: [] });
+    cambiarSesion(nuevaId);
+  });
+
+  btnToggle.addEventListener('click', () => sidebar.classList.toggle('oculto'));
+
+  function crearBurbujaDOM(clase, texto) {
+    const div = document.createElement('div');
+    div.className = `mensaje ${clase}`;
+    div.innerText = texto;
+    
+    if (clase === 'yo') {
+      div.addEventListener('click', () => {
+        if (!estaGenerando) {
+          input.value = div.innerText;
+          input.focus();
+        }
+      });
+    }
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+    return div;
+  }
+
+  // Teclado y Envío
+  input.addEventListener('keydown', (e) => {
+    if (slashPopup.classList.contains('visible')) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        selectedIndex = (selectedIndex + 1) % filteredCommands.length;
+        renderPopup();
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        selectedIndex = (selectedIndex - 1 + filteredCommands.length) % filteredCommands.length;
+        renderPopup();
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        if (selectedIndex >= 0) {
+          e.preventDefault();
+          seleccionarComando(selectedIndex);
+          return;
+        }
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        ocultarPopup();
+        return;
+      }
+    }
+
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      enviarTexto(input.value);
+    }
+  });
+
+  function enviarTexto(texto) {
+    if (texto.trim() === '' || estaGenerando) return;
+    
+    const sesionActual = sesiones.find(s => s.id === sesionActivaId);
+    sesionActual.mensajes.push({ rol: 'yo', texto: texto });
+    crearBurbujaDOM('yo', texto);
+    
+    sesionActual.mensajes.push({ rol: 'ia', texto: '' });
+    currentIaMessage = crearBurbujaDOM('ia', '');
+    
+    window.api.enviarMensaje(texto.trim());
+    
+    input.value = '';
+    input.style.height = 'auto';
+    estaGenerando = true;
+    btnStop.style.display = 'block';
+    ocultarPopup();
+    
+    if (sesionActual.titulo.startsWith('Chat') && sesionActual.mensajes.length <= 2) {
+      sesionActual.titulo = texto.split(' ').slice(0, 3).join(' ') + '...';
+      actualizarSidebar();
+    }
+  }
+
+  // Streaming
+  window.api.onStream((chunk) => {
+    if (currentIaMessage) {
+      currentIaMessage.innerText += chunk;
+      chat.scrollTop = chat.scrollHeight;
+      const sesionActual = sesiones.find(s => s.id === sesionActivaId);
+      sesionActual.mensajes[sesionActual.mensajes.length - 1].texto += chunk;
+    }
+  });
+
+  window.api.onFinStream(() => {
+    estaGenerando = false;
+    btnStop.style.display = 'none';
+  });
+
+  btnStop.addEventListener('click', () => {
+    window.api.detenerGeneracion();
+    estaGenerando = false;
+    btnStop.style.display = 'none';
+  });
+
+  input.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = (this.scrollHeight) + 'px';
+    actualizarPopup();
+  });
+
+  input.addEventListener('blur', () => {
+    setTimeout(() => ocultarPopup(), 150);
+  });
+
+  btnArchivo.addEventListener('click', async () => {
+    const ruta = await window.api.seleccionarArchivo();
+    if (ruta) { input.value = `lee "${ruta}" `; input.focus(); }
+  });
+
+  window.addEventListener('dragover', (e) => { e.preventDefault(); dropOverlay.classList.add('drag-active'); });
+  window.addEventListener('dragleave', (e) => { if (e.clientX === 0 || e.clientY === 0) dropOverlay.classList.remove('drag-active'); });
+  window.addEventListener('drop', (e) => {
+    e.preventDefault(); dropOverlay.classList.remove('drag-active');
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      const ruta = (window.api && window.api.obtenerRutaArchivo) ? window.api.obtenerRutaArchivo(file) : file.path;
+      if (ruta) { input.value = `lee "${ruta}" `; input.focus(); }
+    }
+  });
+
+  // Inicio
+  actualizarSidebar();
+  inicializarModelos();
+  inicializarSkills();
+</script>
+</body>
+</html>
