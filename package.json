@@ -2,6 +2,7 @@
   "name": "local-wireless-llm",
   "version": "1.0.0",
   "description": "An extension of your Local LLM now available everywhere",
+  "type": "module",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
