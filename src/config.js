@@ -8,8 +8,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 export const PROJECT_ROOT = path.resolve(__dirname, '..');
 
-// Cargar .env de desarrollo si existe
-dotenv.config({ path: path.join(PROJECT_ROOT, '.env') });
+// Cargar .env de desarrollo SOLO si no estamos en la app empaquetada
+const esProduccionEmpaquetada = Boolean(app && app.isPackaged);
+
+if (!esProduccionEmpaquetada) {
+    dotenv.config({ path: path.join(PROJECT_ROOT, '.env') });
+}
 
 // Directorio seguro de persistencia de usuario
 function obtenerRutaConfigUsuario() {
@@ -39,9 +43,10 @@ function cargarConfigGuardada() {
 const configGuardada = cargarConfigGuardada();
 
 export const config = {
-    // Prioridad: 1. Guardado en app por el usuario, 2. .env, 3. Vacío para forzar Setup
-    ollamaHost: configGuardada.ollamaHost || process.env.OLLAMA_HOST || '',
-    currentModel: configGuardada.currentModel || process.env.OLLAMA_MODEL || '',
+    // Si es un DMG distribuido a un usuario final y no ha guardado su IP, empieza VACÍO (Dummy)
+    // para que obligatoriamente se abra el Asistente de Setup
+    ollamaHost: configGuardada.ollamaHost || (esProduccionEmpaquetada ? '' : process.env.OLLAMA_HOST || ''),
+    currentModel: configGuardada.currentModel || (esProduccionEmpaquetada ? '' : process.env.OLLAMA_MODEL || ''),
     language: configGuardada.language || 'es',
     projectRoot: PROJECT_ROOT,
     skillsDir: path.join(PROJECT_ROOT, 'skills'),

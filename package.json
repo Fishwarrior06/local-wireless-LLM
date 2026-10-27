@@ -1,8 +1,8 @@
 {
-  "name": "local-wireless-llm",
-  "productName": "Wireless LLM",
+  "name": "local-llm",
+  "productName": "Local-LLM",
   "version": "1.0.0",
-  "description": "An extension of your Local LLM now available everywhere",
+  "description": "Local LLM extension available wirelessly on macOS",
   "type": "module",
   "main": "main.js",
   "scripts": {
@@ -13,8 +13,9 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "build": {
-    "appId": "com.localwireless.llm",
-    "productName": "Wireless LLM",
+    "appId": "com.local.llm",
+    "productName": "Local-LLM",
+    "artifactName": "${productName}-${version}.${ext}",
     "directories": {
       "output": "dist"
     },
@@ -33,7 +34,10 @@
       "src/**/*",
       "skills/**/*",
       "ui/**/*",
-      "package.json"
+      "package.json",
+      "!**/.env*",
+      "!**/*.user-config.json",
+      "!dist"
     ]
   },
   "keywords": [

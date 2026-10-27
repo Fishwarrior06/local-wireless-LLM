@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -11,13 +11,64 @@ import { obtenerSkills } from './src/skills-loader.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Configurar el nombre oficial de la aplicación en macOS y el Dock
-app.setName('Wireless LLM');
+// Nombre oficial de la aplicación en macOS, Dock y Menú del Sistema
+const APP_NAME = 'Local-LLM';
+app.name = APP_NAME;
+app.setName(APP_NAME);
+process.title = APP_NAME;
 
 let mainWindow;
 let abortController = null;
 
+// Configurar Menú Nativo de macOS (Para que junto a la manzana  diga "Local-LLM")
+function configurarMenuMac() {
+    if (process.platform === 'darwin') {
+        const template = [
+            {
+                label: APP_NAME,
+                submenu: [
+                    { role: 'about', label: `Acerca de ${APP_NAME}` },
+                    { type: 'separator' },
+                    { role: 'services', label: 'Servicios' },
+                    { type: 'separator' },
+                    { role: 'hide', label: `Ocultar ${APP_NAME}` },
+                    { role: 'hideOthers', label: 'Ocultar otros' },
+                    { role: 'unhide', label: 'Mostrar todo' },
+                    { type: 'separator' },
+                    { role: 'quit', label: `Salir de ${APP_NAME}` }
+                ]
+            },
+            {
+                label: 'Edición',
+                submenu: [
+                    { role: 'undo', label: 'Deshacer' },
+                    { role: 'redo', label: 'Rehacer' },
+                    { type: 'separator' },
+                    { role: 'cut', label: 'Cortar' },
+                    { role: 'copy', label: 'Copiar' },
+                    { role: 'paste', label: 'Pegar' },
+                    { role: 'selectAll', label: 'Seleccionar todo' }
+                ]
+            },
+            {
+                label: 'Ventana',
+                submenu: [
+                    { role: 'minimize', label: 'Minimizar' },
+                    { role: 'zoom', label: 'Zoom' },
+                    { role: 'close', label: 'Cerrar ventana' }
+                ]
+            }
+        ];
+        const menu = Menu.buildFromTemplate(template);
+        Menu.setApplicationMenu(menu);
+    } else {
+        Menu.setApplicationMenu(null);
+    }
+}
+
 function createWindow() {
+    configurarMenuMac();
+
     const iconPath = path.join(__dirname, 'ui', 'assets', 'icon.png');
 
     // Configurar icono en el Dock de macOS
@@ -26,7 +77,7 @@ function createWindow() {
     }
 
     mainWindow = new BrowserWindow({
-        title: 'Wireless LLM',
+        title: APP_NAME,
         width: 1140,
         height: 800,
         minWidth: 840,
