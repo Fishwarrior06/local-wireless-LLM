@@ -4,8 +4,8 @@ import fs from 'fs';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 
-dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '.env') }); // Ruta absoluta para funcionar desde Finder/Electron empaquetado
 const OLLAMA_HOST = process.env.OLLAMA_HOST;
 const MODEL = process.env.OLLAMA_MODEL;
 
@@ -149,7 +149,7 @@ ipcMain.on('mensaje-usuario', async (event, input) => {
             return;
         }
     } else if (matchRepo) {
-        const rutaObjetivo = process.cwd();
+        const rutaObjetivo = __dirname; // Siempre apunta al directorio del proyecto
         try {
             const { archivos, totalBytes } = leerCarpetaRecursiva(rutaObjetivo);
             if (archivos.length === 0) {

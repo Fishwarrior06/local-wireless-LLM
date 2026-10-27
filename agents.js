@@ -3,9 +3,11 @@ import path from 'path';
 import readline from 'readline';
 import chalk from 'chalk';
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
 
 // Cargar variables del archivo .env
-dotenv.config();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '.env') }); // Ruta absoluta para que siempre encuentre el .env
 
 const OLLAMA_HOST = process.env.OLLAMA_HOST;
 const MODEL = process.env.OLLAMA_MODEL;
@@ -158,7 +160,7 @@ function procesarComando(input) {
             promptFinal = matchRepo[1] || "Analiza la arquitectura y estructura de este repositorio.";
         } catch (e) {
             console.log(chalk.red(`[Mac: Error leyendo repositorio: ${e.message}]`));
-            return false;
+            return { promptFinal: null, contexto: '' };
         }
     } else if (matchCarpeta) {
         const rutaObjetivo = (matchCarpeta[1] || matchCarpeta[2]).trim();
@@ -174,7 +176,7 @@ function procesarComando(input) {
             promptFinal = matchCarpeta[3] || "Analiza los archivos de esta carpeta.";
         } catch (e) {
             console.log(chalk.red(`[Mac: Error leyendo carpeta '${rutaObjetivo}': ${e.message}]`));
-            return false;
+            return { promptFinal: null, contexto: '' };
         }
     } else if (matchLectura) {
         const rutaArchivo = (matchLectura[1] || matchLectura[2]).trim();
@@ -198,7 +200,7 @@ function procesarComando(input) {
             }
         } catch (e) {
             console.log(chalk.red(`[Mac: Error leyendo el archivo '${rutaArchivo}': ${e.message}]`));
-            return false;
+            return { promptFinal: null, contexto: '' };
         }
     }
 
@@ -220,7 +222,7 @@ function iniciarChat() {
 
         const { promptFinal, contexto } = procesarComando(input);
         
-        if (promptFinal !== false) {
+        if (promptFinal !== null) {
             await preguntarAPI(promptFinal, contexto);
         }
         
