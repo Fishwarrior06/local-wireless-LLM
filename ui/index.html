@@ -111,24 +111,44 @@
       const data = await window.api.obtenerModelos();
       selectModelo.innerHTML = '';
       
-      const modelos = data.modelos && data.modelos.length > 0 ? data.modelos : [data.modeloActual];
-      modelos.forEach(m => {
+      let lista = (data && data.modelos && data.modelos.length > 0) 
+        ? data.modelos 
+        : ['qwen3.5:4b', 'qwen3-coder', 'gemma4:12b'];
+      
+      // Asegurarse de que el modelo actual esté en la lista
+      if (data && data.modeloActual && !lista.includes(data.modeloActual)) {
+        lista.unshift(data.modeloActual);
+      }
+
+      lista.forEach(m => {
         const opt = document.createElement('option');
         opt.value = m;
         opt.textContent = m;
-        if (m === data.modeloActual) opt.selected = true;
+        if (data && m === data.modeloActual) opt.selected = true;
         selectModelo.appendChild(opt);
-      });
-
-      selectModelo.addEventListener('change', async (e) => {
-        const nuevo = e.target.value;
-        await window.api.cambiarModelo(nuevo);
-        agregarBurbujaSistema(`⚡ Modelo conmutado a: ${nuevo}`);
       });
     } catch (err) {
       console.error("Error al conectar con modelos:", err);
+      // Fallback con los modelos instalados/en descarga
+      selectModelo.innerHTML = `
+        <option value="qwen3.5:4b">qwen3.5:4b</option>
+        <option value="qwen3-coder">qwen3-coder</option>
+        <option value="gemma4:12b">gemma4:12b</option>
+      `;
     }
   }
+
+  // Listener directo para cambiar de modelo al seleccionar
+  selectModelo.addEventListener('change', async (e) => {
+    const nuevo = e.target.value;
+    if (!nuevo) return;
+    try {
+      await window.api.cambiarModelo(nuevo);
+      agregarBurbujaSistema(`⚡ Modelo conmutado a: ${nuevo}`);
+    } catch (err) {
+      console.error("Error al cambiar de modelo:", err);
+    }
+  });
 
   async function inicializarSkills() {
     try {
@@ -250,7 +270,12 @@
     cambiarSesion(nuevaId);
   });
 
-  btnToggle.addEventListener('click', () => sidebar.classList.toggle('oculto'));
+  btnToggle.addEventListener('click', () => {
+    sidebar.classList.toggle('oculto');
+    const estaOculto = sidebar.classList.contains('oculto');
+    btnToggle.title = estaOculto ? 'Mostrar barra lateral' : 'Ocultar barra lateral';
+    btnToggle.style.color = estaOculto ? 'var(--accent-cyan)' : 'var(--text-secondary)';
+  });
 
   // =========================================================================
   // Renderizado Markdown y Antigravity Artifacts

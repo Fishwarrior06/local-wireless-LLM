@@ -74,9 +74,10 @@ body {
   top: 0;
   left: 0;
   right: 0;
-  height: 50px;
+  height: 52px;
   -webkit-app-region: drag;
-  z-index: 99;
+  z-index: 1; /* Bajo z-index para no solapar los botones interactivos */
+  pointer-events: none; /* Deja pasar los clics a los elementos debajo */
 }
 
 /* ==========================================================================
@@ -85,21 +86,26 @@ body {
 
 #sidebar {
   width: 250px;
-  min-width: 250px;
   background: var(--bg-sidebar);
   backdrop-filter: blur(45px) saturate(200%);
   border-right: 0.5px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
   padding-top: 54px;
-  transition: transform 0.35s var(--ease-apple), margin-right 0.35s var(--ease-apple);
+  transition: width 0.3s var(--ease-apple), transform 0.3s var(--ease-apple), opacity 0.25s var(--ease-apple);
   position: relative;
-  z-index: 10;
+  z-index: 30;
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
 #sidebar.oculto {
+  width: 0 !important;
+  min-width: 0 !important;
   transform: translateX(-100%);
-  margin-right: -250px;
+  border-right: none;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .sidebar-header {
@@ -201,14 +207,16 @@ body {
   -webkit-app-region: drag;
   border-bottom: 0.5px solid var(--border-subtle);
   backdrop-filter: blur(30px);
-  z-index: 20;
+  position: relative;
+  z-index: 50; /* Por encima de cualquier drag-region */
 }
 
 .toolbar-left {
   display: flex;
   align-items: center;
   gap: 12px;
-  -webkit-app-region: no-drag;
+  -webkit-app-region: no-drag !important;
+  pointer-events: auto;
 }
 
 #toggle-sidebar {
@@ -216,19 +224,25 @@ body {
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
-  transition: background 0.15s, color 0.15s;
+  font-size: 15px;
+  -webkit-app-region: no-drag !important;
+  pointer-events: auto;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
 }
 
 #toggle-sidebar:hover {
   background: var(--surface-hover);
   color: var(--text-primary);
+}
+
+#toggle-sidebar:active {
+  transform: scale(0.94);
 }
 
 .app-branding {
@@ -238,6 +252,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  -webkit-app-region: drag; /* El texto del título sí sirve para arrastrar */
 }
 
 .brand-gradient {
@@ -252,7 +267,10 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  -webkit-app-region: no-drag;
+  -webkit-app-region: no-drag !important;
+  pointer-events: auto;
+  position: relative;
+  z-index: 60;
 }
 
 .model-pill {
@@ -265,6 +283,8 @@ body {
   padding: 4px 10px 4px 12px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
   transition: border-color 0.2s, box-shadow 0.2s;
+  -webkit-app-region: no-drag !important;
+  pointer-events: auto;
 }
 
 .model-pill:hover {
@@ -279,6 +299,7 @@ body {
   background: var(--accent-cyan);
   box-shadow: 0 0 8px var(--accent-cyan-glow);
   animation: pulse-dot 2.5s infinite ease-in-out;
+  pointer-events: none;
 }
 
 @keyframes pulse-dot {
@@ -295,7 +316,11 @@ select#select-modelo {
   font-family: inherit;
   outline: none;
   cursor: pointer;
-  padding-right: 4px;
+  padding: 4px 6px 4px 0;
+  -webkit-app-region: no-drag !important;
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 70;
 }
 
 select#select-modelo option {
