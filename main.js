@@ -103,6 +103,14 @@ function createWindow() {
         }
     });
 
+    // Re-aplicar el ícono del Dock cuando la ventana esté lista para mostrarse,
+    // ya que macOS puede revertirlo al ícono del bundle al mostrar la ventana.
+    mainWindow.once('ready-to-show', () => {
+        if (process.platform === 'darwin' && app.dock && fs.existsSync(iconPath)) {
+            app.dock.setIcon(nativeImage.createFromPath(iconPath));
+        }
+    });
+
     mainWindow.loadFile(path.join(__dirname, 'ui', 'index.html'));
 }
 
