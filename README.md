@@ -2,7 +2,7 @@
 
 > **Your local language model, accelerated by remote hardware, available wirelessly and privately on your Mac.**
 
-![macOS](https://img.shields.io/badge/macOS-Sonoma%20%2F%20Sequoia-000000?style=flat&logo=apple&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS-Tahoe%20%2F%20GoldenGate-000000?style=flat&logo=apple&logoColor=white)
 ![Electron](https://img.shields.io/badge/Desktop-Native%20Vibrancy-47848F?style=flat&logo=electron&logoColor=white)
 ![Ollama](https://img.shields.io/badge/Inference-Ollama-white?style=flat&logo=ollama&logoColor=black)
 ![Tailscale](https://img.shields.io/badge/Network-Tailscale%20WireGuard-202324?style=flat&logo=tailscale&logoColor=white)
