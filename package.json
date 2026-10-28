@@ -1,7 +1,7 @@
 {
   "name": "local-llm",
   "productName": "Local-LLM",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Local LLM extension available wirelessly on macOS",
   "type": "module",
   "main": "main.js",
