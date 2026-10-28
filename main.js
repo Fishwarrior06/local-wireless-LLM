@@ -247,15 +247,31 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
 
     // Si la sesión tiene un workspace asignado y el mensaje no es ya un comando con contexto cargado,
     // inyectar automáticamente el contexto del repositorio/carpeta como contexto del sistema.
+    //
+    // La flag `parsed.workspaceYaCargado` se activa cuando commands.js ya leyó el repo completo
+    // (ej. /lee-repo, /edita-repo). En ese caso solo inyectamos el mapa de estructura para
+    // no duplicar tokens. Si hay un archivo específico cargado (=== CONTENIDO DE:), también
+    // acompañamos con el mapa. En cualquier otro mensaje normal, se inyecta el repo completo.
     let workspaceContexto = '';
-    if (carpeta && !parsed.modoEdicion && !parsed.modoEditaRepo && !parsed.contexto.includes('REPOSITORIO')) {
+    if (carpeta && !parsed.modoEdicion && !parsed.modoEditaRepo) {
         try {
-            const { archivos, totalBytes } = leerCarpetaRecursiva(carpeta);
+            const { archivos, totalBytes, limitAlcanzado } = leerCarpetaRecursiva(carpeta);
             if (archivos.length > 0) {
-                const { resumen } = formatearContextoCarpeta(carpeta, archivos, totalBytes);
-                workspaceContexto = resumen;
+                const mapEstructura = `Estructura del workspace (${archivos.length} archivos${limitAlcanzado ? ' — límite alcanzado, hay más archivos' : ''}):\n` +
+                    archivos.map(a => `- ${a.ruta}`).join('\n') + '\n\n';
+
+                if (parsed.workspaceYaCargado || parsed.contexto.includes('=== CONTENIDO DE:')) {
+                    // Ya hay contexto de archivo/repo: solo incluir el mapa para no duplicar tokens
+                    workspaceContexto = mapEstructura;
+                } else {
+                    // Mensaje de conversación normal: inyectar repo completo
+                    const { resumen } = formatearContextoCarpeta(carpeta, archivos, totalBytes, limitAlcanzado);
+                    workspaceContexto = resumen;
+                }
             }
-        } catch (e) {}
+        } catch (e) {
+            console.error('[Workspace] Error leyendo carpeta del workspace:', e.message);
+        }
     }
 
     const promptCompleto = `${workspaceContexto}${parsed.contexto}Instrucción: ${parsed.promptFinal}`.trim();

@@ -15,12 +15,14 @@ export const IGNORAR_ARCHIVOS = new Set([
     '.env', 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml'
 ]);
 
-export function leerCarpetaRecursiva(rutaBase, maxArchivos = 40, maxBytes = 300 * 1024) {
+export function leerCarpetaRecursiva(rutaBase, maxArchivos = 80, maxBytes = 600 * 1024) {
     let archivosLeidos = [];
     let totalBytes = 0;
+    let archivosOmitidos = 0; // Archivos que existían pero se saltaron por límites
+    let limitAlcanzado = false;
 
     function recorrer(dirActual, profundidad = 0) {
-        if (profundidad > 4 || archivosLeidos.length >= maxArchivos) return;
+        if (profundidad > 6 || archivosLeidos.length >= maxArchivos) return;
 
         let items;
         try {
@@ -30,7 +32,10 @@ export function leerCarpetaRecursiva(rutaBase, maxArchivos = 40, maxBytes = 300 
         }
 
         for (const item of items) {
-            if (archivosLeidos.length >= maxArchivos || totalBytes >= maxBytes) break;
+            if (archivosLeidos.length >= maxArchivos || totalBytes >= maxBytes) {
+                limitAlcanzado = true;
+                break;
+            }
 
             const nombre = item.name;
             const rutaCompleta = path.join(dirActual, nombre);
@@ -47,8 +52,15 @@ export function leerCarpetaRecursiva(rutaBase, maxArchivos = 40, maxBytes = 300 
                 if (EXTENSIONES_VALIDAS.has(ext) || nombre.toLowerCase() === 'license' || nombre.toLowerCase() === 'dockerfile') {
                     try {
                         const stats = fs.statSync(rutaCompleta);
-                        if (stats.size > 100 * 1024) continue;
-                        if (totalBytes + stats.size > maxBytes) break;
+                        if (stats.size > 150 * 1024) {
+                            // Archivo individual demasiado grande: registrar en omitidos
+                            archivosOmitidos++;
+                            continue;
+                        }
+                        if (totalBytes + stats.size > maxBytes) {
+                            limitAlcanzado = true;
+                            break;
+                        }
 
                         const contenido = fs.readFileSync(rutaCompleta, 'utf-8');
                         totalBytes += stats.size;
@@ -60,12 +72,16 @@ export function leerCarpetaRecursiva(rutaBase, maxArchivos = 40, maxBytes = 300 
     }
 
     recorrer(rutaBase, 0);
-    return { archivos: archivosLeidos, totalBytes };
+    return { archivos: archivosLeidos, totalBytes, limitAlcanzado, archivosOmitidos };
 }
 
-export function formatearContextoCarpeta(rutaObjetivo, archivos, totalBytes) {
+export function formatearContextoCarpeta(rutaObjetivo, archivos, totalBytes, limitAlcanzado = false) {
     const kbTotal = (totalBytes / 1024).toFixed(1);
+    const avisoLimite = limitAlcanzado
+        ? `\n⚠️ NOTA: Se alcanzó el límite de carga. Solo se incluyen ${archivos.length} archivos (${kbTotal} KB). El workspace puede contener más archivos no mostrados aquí.\n`
+        : '';
     let resumen = `=== REPOSITORIO / CARPETA: ${rutaObjetivo} (${archivos.length} archivos, ${kbTotal} KB) ===\n`;
+    resumen += avisoLimite;
     resumen += `Estructura de archivos incluidos:\n` + archivos.map(a => `- ${a.ruta}`).join('\n') + `\n\n`;
     for (const a of archivos) {
         resumen += `--- INICIO ARCHIVO: ${a.ruta} ---\n${a.contenido}\n--- FIN ARCHIVO: ${a.ruta} ---\n\n`;
