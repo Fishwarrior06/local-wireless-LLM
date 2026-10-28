@@ -7,6 +7,7 @@ import { config } from './src/config.js';
 import { generarStream, listarModelosOllama } from './src/ollama.js';
 import { procesarInputUsuario } from './src/commands.js';
 import { obtenerSkills } from './src/skills-loader.js';
+import { leerCarpetaRecursiva, formatearContextoCarpeta } from './src/fs-tools.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -140,9 +141,20 @@ ipcMain.on('detener-generacion', () => {
     }
 });
 
+// Selector de carpeta para workspace de sesión
+ipcMain.handle('seleccionar-carpeta-workspace', async () => {
+    const parentWin = (mainWindow && !mainWindow.isDestroyed()) ? mainWindow : null;
+    const result = await dialog.showOpenDialog(parentWin, {
+        properties: ['openDirectory'],
+        buttonLabel: 'Usar como Workspace'
+    });
+    return result.canceled ? null : result.filePaths[0];
+});
+
 // Selector de archivos nativo
 ipcMain.handle('seleccionar-archivo', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
+    const parentWin = (mainWindow && !mainWindow.isDestroyed()) ? mainWindow : null;
+    const result = await dialog.showOpenDialog(parentWin, {
         properties: ['openFile', 'openDirectory'],
         buttonLabel: 'Cargar al Chat'
     });
@@ -205,8 +217,13 @@ ipcMain.handle('obtener-skills', async () => {
 });
 
 // Procesar mensaje del usuario
-ipcMain.on('mensaje-usuario', async (event, { input, historial }) => {
-    const parsed = procesarInputUsuario(input);
+ipcMain.on('mensaje-usuario', async (event, data) => {
+    // Soportar tanto string directo como objeto estructurado { input, historial, carpeta }
+    const inputTexto = typeof data === 'string' ? data : (data?.input || '');
+    const historial = Array.isArray(data?.historial) ? data.historial : [];
+    const carpeta = data?.carpeta || null;
+
+    const parsed = procesarInputUsuario(inputTexto, carpeta || null);
 
     if (parsed.error) {
         event.sender.send('stream-ia', `[Error]: ${parsed.error}\n\n`);
@@ -228,7 +245,20 @@ ipcMain.on('mensaje-usuario', async (event, { input, historial }) => {
         event.sender.send('stream-ia', `[Analizando repositorio para edición múltiple...]\n\n`);
     }
 
-    const promptCompleto = `${parsed.contexto}Instrucción: ${parsed.promptFinal}`.trim();
+    // Si la sesión tiene un workspace asignado y el mensaje no es ya un comando con contexto cargado,
+    // inyectar automáticamente el contexto del repositorio/carpeta como contexto del sistema.
+    let workspaceContexto = '';
+    if (carpeta && !parsed.modoEdicion && !parsed.modoEditaRepo && !parsed.contexto.includes('REPOSITORIO')) {
+        try {
+            const { archivos, totalBytes } = leerCarpetaRecursiva(carpeta);
+            if (archivos.length > 0) {
+                const { resumen } = formatearContextoCarpeta(carpeta, archivos, totalBytes);
+                workspaceContexto = resumen;
+            }
+        } catch (e) {}
+    }
+
+    const promptCompleto = `${workspaceContexto}${parsed.contexto}Instrucción: ${parsed.promptFinal}`.trim();
     abortController = new AbortController();
 
     try {
@@ -255,7 +285,7 @@ ipcMain.on('mensaje-usuario', async (event, { input, historial }) => {
                 const cambios = JSON.parse(respuestaFinal.trim());
                 let count = 0;
                 for (const { ruta, contenido } of cambios) {
-                    const rutaAbsoluta = path.join(config.projectRoot, ruta);
+                    const rutaAbsoluta = path.join(carpeta || config.projectRoot, ruta);
                     fs.writeFileSync(rutaAbsoluta, contenido.trim(), 'utf-8');
                     event.sender.send('stream-ia', `\n✅ [Guardado: ${ruta}]`);
                     count++;

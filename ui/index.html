@@ -27,6 +27,7 @@
         <button id="toggle-sidebar" title="Alternar barra lateral">◫</button>
         <div class="app-branding">
           <span>Local-LLM</span>
+          <div id="workspace-indicator" style="display:none;"></div>
         </div>
       </div>
 
@@ -241,7 +242,7 @@
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch {}
-    return [{ id: 1, titulo: 'Chat Principal', mensajes: [] }];
+    return [{ id: 1, titulo: 'Chat Principal', mensajes: [], carpeta: null }];
   }
 
   function guardarSesiones() {
@@ -551,6 +552,52 @@
     menu.style.left = `${Math.min(e.clientX, window.innerWidth - 180)}px`;
     menu.style.top  = `${Math.min(e.clientY, window.innerHeight - 100)}px`;
 
+    const sesionParaMenu = sesiones.find(s => s.id === sesionId);
+
+    // Botón Asignar / Cambiar Workspace
+    const btnWorkspace = document.createElement('button');
+    btnWorkspace.innerHTML = sesionParaMenu?.carpeta ? '📂 Cambiar Workspace' : '📂 Asignar Workspace';
+    btnWorkspace.onclick = async (ev) => {
+      ev.stopPropagation();
+      cerrarContextMenu();
+      const carpeta = await window.api.seleccionarCarpetaWorkspace();
+      if (carpeta) {
+        const sesion = sesiones.find(s => s.id === sesionId);
+        if (sesion) {
+          sesion.carpeta = carpeta;
+          const t = I18N[idiomaActual];
+          if (sesion.titulo.startsWith(t.newSession) || sesion.titulo === 'Chat Principal') {
+            const folderName = carpeta.split(/[\\/]/).pop();
+            sesion.titulo = folderName;
+          }
+          guardarSesiones();
+          actualizarSidebar();
+          actualizarWorkspaceBar();
+        }
+      }
+    };
+
+    // Botón Quitar Workspace (si tiene)
+    let btnQuitarWorkspace = null;
+    if (sesionParaMenu?.carpeta) {
+      btnQuitarWorkspace = document.createElement('button');
+      btnQuitarWorkspace.innerHTML = '🚫 Quitar Workspace';
+      btnQuitarWorkspace.onclick = (ev) => {
+        ev.stopPropagation();
+        cerrarContextMenu();
+        const sesion = sesiones.find(s => s.id === sesionId);
+        if (sesion) {
+          sesion.carpeta = null;
+          guardarSesiones();
+          actualizarSidebar();
+          actualizarWorkspaceBar();
+        }
+      };
+    }
+
+    const sep0 = document.createElement('div');
+    sep0.className = 'menu-separator';
+
     // Botón Renombrar
     const btnRename = document.createElement('button');
     btnRename.innerHTML = '✏️ Renombrar';
@@ -574,6 +621,9 @@
       eliminarSesion(sesionId);
     };
 
+    menu.appendChild(btnWorkspace);
+    if (btnQuitarWorkspace) menu.appendChild(btnQuitarWorkspace);
+    menu.appendChild(sep0);
     menu.appendChild(btnRename);
     menu.appendChild(sep);
     menu.appendChild(btnDelete);
@@ -632,11 +682,48 @@
       const div = document.createElement('div');
       div.className = `sesion-btn ${sesion.id === sesionActivaId ? 'activa' : ''}`;
       div.setAttribute('data-sesion-id', sesion.id);
-      div.innerText = sesion.titulo;
+
+      // Título
+      const spanTitulo = document.createElement('span');
+      spanTitulo.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;';
+      spanTitulo.textContent = sesion.titulo;
+      div.appendChild(spanTitulo);
+
+      // Indicador de workspace
+      if (sesion.carpeta) {
+        const folderBadge = document.createElement('span');
+        folderBadge.title = sesion.carpeta;
+        folderBadge.style.cssText = 'font-size:11px;opacity:0.65;flex-shrink:0;margin-left:6px;';
+        folderBadge.textContent = '📂';
+        div.appendChild(folderBadge);
+      }
+
       div.onclick = () => cambiarSesion(sesion.id);
       div.addEventListener('contextmenu', (e) => mostrarContextMenu(e, sesion.id));
       listaSesiones.appendChild(div);
     });
+    actualizarWorkspaceBar();
+  }
+
+  function actualizarWorkspaceBar() {
+    const indicator = document.getElementById('workspace-indicator');
+    if (!indicator) return;
+    const sesionActual = sesiones.find(s => s.id === sesionActivaId);
+    if (sesionActual?.carpeta) {
+      const folderName = sesionActual.carpeta.split(/[\\/]/).pop();
+      indicator.innerHTML = `<span style="
+        display:inline-flex;align-items:center;gap:5px;
+        background:rgba(255,255,255,0.07);
+        border:0.5px solid rgba(255,255,255,0.14);
+        border-radius:6px;padding:2px 8px;
+        font-size:11px;color:rgba(255,255,255,0.7);
+        font-family:var(--font-mono);
+        max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+      " title="${sesionActual.carpeta}">📂 ${folderName}</span>`;
+      indicator.style.display = 'inline-flex';
+    } else {
+      indicator.style.display = 'none';
+    }
   }
 
   function cambiarSesion(id) {
@@ -644,6 +731,7 @@
     sesionActivaId = id;
     guardarSesiones();
     actualizarSidebar();
+    actualizarWorkspaceBar();
     chat.innerHTML = '';
     const sesionActual = sesiones.find(s => s.id === sesionActivaId);
     sesionActual.mensajes.forEach(msg => crearBurbujaDOM(msg.rol, msg.texto));
@@ -654,7 +742,7 @@
     if (estaGenerando) return;
     const t = I18N[idiomaActual];
     const nuevaId = Date.now();
-    sesiones.unshift({ id: nuevaId, titulo: `${t.newSession} ${sesiones.length + 1}`, mensajes: [] });
+    sesiones.unshift({ id: nuevaId, titulo: `${t.newSession} ${sesiones.length + 1}`, mensajes: [], carpeta: null });
     cambiarSesion(nuevaId);
     guardarSesiones();
   });
@@ -851,7 +939,7 @@
     // Mostrar skeleton mientras la IA piensa
     mostrarSkeleton();
 
-    window.api.enviarMensaje(texto.trim(), historialParaIA);
+    window.api.enviarMensaje(texto.trim(), historialParaIA, sesionActual.carpeta || null);
     
     input.value = '';
     ajustarAlturaTextarea();
@@ -988,6 +1076,7 @@
   // Inicialización
   aplicarTraducciones();
   actualizarSidebar();
+  actualizarWorkspaceBar();
   // Restaurar mensajes de la sesión activa al abrir la app
   const sesionRestaurada = sesiones.find(s => s.id === sesionActivaId);
   if (sesionRestaurada && sesionRestaurada.mensajes.length > 0) {

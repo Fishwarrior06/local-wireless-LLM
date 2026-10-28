@@ -4,7 +4,7 @@ import { config } from './config.js';
 import { leerCarpetaRecursiva, formatearContextoCarpeta } from './fs-tools.js';
 import { detectarSkill } from './skills-loader.js';
 
-export function procesarInputUsuario(input) {
+export function procesarInputUsuario(input, workspacePath = null) {
     let contexto = "";
     let promptFinal = input;
     let modoEdicion = false;
@@ -41,13 +41,17 @@ export function procesarInputUsuario(input) {
     const matchEdicion = promptFinal.match(regexEdicion);
     const matchEditaRepo = promptFinal.match(regexEditaRepo);
 
+    const rutaRaizEfectiva = workspacePath || config.projectRoot;
+
     if (matchEdicion) {
         modoEdicion = true;
         archivoDestino = (matchEdicion[1] || matchEdicion[2]).trim();
         try {
-            const contenido = fs.readFileSync(archivoDestino, 'utf-8');
+            const rutaCompleta = path.isAbsolute(archivoDestino) ? archivoDestino : path.join(rutaRaizEfectiva, archivoDestino);
+            const contenido = fs.readFileSync(rutaCompleta, 'utf-8');
             contexto += `Código actual de ${archivoDestino}:\n${contenido}\n\n`;
             promptFinal = `Instrucción: ${matchEdicion[3] || 'Optimiza este código'}\n\nREGLA ESTRICTA: Devuelve ÚNICAMENTE el código final modificado. Sin saludos, explicaciones ni bloques markdown.`;
+            archivoDestino = rutaCompleta;
         } catch (e) {
             return { error: `No se encontró el archivo '${archivoDestino}'` };
         }
@@ -55,11 +59,11 @@ export function procesarInputUsuario(input) {
         modoEditaRepo = true;
         const instruccion = matchEditaRepo[1] || "Optimiza el repositorio.";
         try {
-            const { archivos, totalBytes } = leerCarpetaRecursiva(config.projectRoot);
+            const { archivos, totalBytes } = leerCarpetaRecursiva(rutaRaizEfectiva);
             if (archivos.length === 0) {
                 return { error: 'No se encontraron archivos compatibles en el repositorio.' };
             }
-            const { resumen, kbTotal } = formatearContextoCarpeta(config.projectRoot, archivos, totalBytes);
+            const { resumen, kbTotal } = formatearContextoCarpeta(rutaRaizEfectiva, archivos, totalBytes);
             contexto += `Eres un agente de modificación de código. Se te proporciona el contenido de un repositorio y una instrucción.\nTu tarea es devolver ÚNICAMENTE un array JSON válido con los archivos que necesiten ser modificados.\nCada elemento del array debe tener exactamente dos campos: "ruta" (string con la ruta relativa del archivo) y "contenido" (string con el código completo y final del archivo modificado).\nNo incluyas explicaciones, comentarios, bloques markdown ni texto fuera del JSON.\n\n=== REPOSITORIO ===\n${resumen}===================\n\n`;
             promptFinal = `Instrucción: ${instruccion}`;
             return {
@@ -74,11 +78,11 @@ export function procesarInputUsuario(input) {
         }
     } else if (matchRepo) {
         try {
-            const { archivos, totalBytes } = leerCarpetaRecursiva(config.projectRoot);
+            const { archivos, totalBytes } = leerCarpetaRecursiva(rutaRaizEfectiva);
             if (archivos.length === 0) {
                 return { error: 'No se encontraron archivos compatibles en el repositorio.' };
             }
-            const { resumen, kbTotal } = formatearContextoCarpeta(config.projectRoot, archivos, totalBytes);
+            const { resumen, kbTotal } = formatearContextoCarpeta(rutaRaizEfectiva, archivos, totalBytes);
             contexto += resumen;
             promptFinal = matchRepo[1] || "Analiza la arquitectura y estructura de este repositorio.";
             return {

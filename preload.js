@@ -1,11 +1,12 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
-    enviarMensaje: (texto, historial) => ipcRenderer.send('mensaje-usuario', { input: texto, historial }),
+    enviarMensaje: (texto, historial, carpeta) => ipcRenderer.send('mensaje-usuario', { input: texto, historial, carpeta }),
     onStream: (callback) => ipcRenderer.on('stream-ia', (event, chunk) => callback(chunk)),
     onFinStream: (callback) => ipcRenderer.on('fin-stream', () => callback()),
     detenerGeneracion: () => ipcRenderer.send('detener-generacion'),
     seleccionarArchivo: () => ipcRenderer.invoke('seleccionar-archivo'),
+    seleccionarCarpetaWorkspace: () => ipcRenderer.invoke('seleccionar-carpeta-workspace'),
     obtenerRutaArchivo: (file) => webUtils ? webUtils.getPathForFile(file) : file.path,
     
     // Métodos para selector de modelos y skills

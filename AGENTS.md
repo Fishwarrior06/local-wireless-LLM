@@ -24,16 +24,20 @@ local-wireless-LLM/
 │   └── testear.md              # Pruebas unitarias
 │
 ├── src/
-│   ├── config.js               # Rutas absolutas, carga .env y gestión de modelo activo
+│   ├── config.js               # Rutas absolutas, persistencia en userData y gestión de modelo
 │   ├── fs-tools.js             # Recorrido recursivo seguro y formateo de carpetas/repos
 │   ├── skills-loader.js        # Carga, parseo y detección contextual de skills
-│   ├── ollama.js               # Cliente HTTP stream, cancelación y listado de modelos
-│   └── commands.js             # Parser central de /lee, /edita, /edita-repo y skills
+│   ├── ollama.js               # Cliente HTTP stream (/api/chat), cancelación y listado de modelos
+│   └── commands.js             # Parser de comandos y soporte de workspace dinámico
 │
-├── main.js                     # Proceso Electron (Ventana, IPC, eventos del sistema)
+├── ui/                         # Frontend Liquid Glass (macOS 26/27)
+│   ├── index.html              # Chat canvas, setup wizard, modal de modelos, workspaces
+│   ├── styles.css              # Sistema de diseño Liquid Glass con animaciones nativas
+│   └── assets/                 # Iconos e imágenes del sistema
+│
+├── main.js                     # Proceso Electron (Ventana, IPC, Dock, menús nativos)
 ├── agents.js                   # CLI interactivo (Readline + Chalk)
 ├── preload.js                  # IPC seguro (contextBridge)
-├── index.html / styles.css     # Frontend con autocompletado y selector de modelos
 └── AGENTS.md
 ```
 
@@ -48,7 +52,17 @@ El sistema soporta conmutación en caliente entre múltiples modelos (ej. `qwen3
 
 ---
 
-## 4. Ecosistema de Skills (`skills/*.md`)
+## 4. Workspaces por Sesión (Estilo Antigravity)
+
+Cada conversación en la aplicación puede tener asignada una **carpeta de trabajo (Workspace)** local:
+1. **Asignación:** Haciendo clic derecho sobre cualquier sesión en la barra lateral ➔ `📂 Asignar Workspace`.
+2. **Contexto Automático:** Si una sesión tiene un workspace asignado, el agente inyecta de forma autónoma el mapa y contenido de los archivos relevantes como contexto inicial. No es necesario usar prefijos `/lee` ni comandos manuales: el modelo sabe qué archivos existen y cómo están estructurados.
+3. **Indicador Visual:** La barra superior muestra una píldora con el nombre del repositorio activo (`📂 <nombre-carpeta>`), y la sesión en el sidebar muestra el distintivo 📂.
+4. **Edición contextual:** Los comandos de modificación (`edita`, `edita-repo`) y las preguntas operan directamente sobre la raíz del workspace de esa conversación.
+
+---
+
+## 5. Ecosistema de Skills (`skills/*.md`)
 
 Cada skill reside en la carpeta `skills/` como un archivo Markdown con metadatos YAML en el encabezado:
 
@@ -68,11 +82,12 @@ triggers: ["refactorizar", "clean-code", "modularizar"]
 
 ---
 
-## 5. Capacidades Autónomas (Herramientas del Agente)
+## 6. Capacidades Autónomas (Herramientas del Agente)
 
-| Comando | Tipo | Acción |
+| Comando / Modo | Tipo | Acción |
 | :--- | :--- | :--- |
-| `/lee <archivo\|carpeta>` | Lectura | Inyecta el contenido de un archivo o directorio en el contexto. |
+| **Workspace Sesión** | Autónomo | Inyección automática del repositorio asignado a la sesión en cada mensaje. |
+| `/lee <archivo\|carpeta>` | Lectura | Inyecta el contenido de un archivo o directorio específico en el contexto. |
 | `/lee-repo [pregunta]` | Lectura | Empaqueta todo el repositorio de trabajo y responde preguntas sobre él. |
 | `/lee-carpeta <dir>` | Lectura | Lee recursivamente el árbol de código de una carpeta dada. |
 | `/edita <archivo> <instrucción>` | Escritura | Modifica un único archivo y lo sobreescribe en disco. |
@@ -81,15 +96,18 @@ triggers: ["refactorizar", "clean-code", "modularizar"]
 
 ---
 
-## 6. Canales IPC en Electron (`main.js` ↔ `preload.js`)
+## 7. Canales IPC en Electron (`main.js` ↔ `preload.js`)
 
 | Canal IPC | Tipo | Dirección | Descripción |
 | :--- | :--- | :--- | :--- |
-| `mensaje-usuario` | `ipcMain.on` | Renderer ➔ Main | Procesa prompts, comandos y skills. |
+| `mensaje-usuario` | `ipcMain.on` | Renderer ➔ Main | Procesa `{ input, historial, carpeta }`. |
 | `stream-ia` | `event.sender.send` | Main ➔ Renderer | Emite cada token generado en tiempo real. |
-| `fin-stream` | `event.sender.send` | Main ➔ Renderer | Notifica fin de transmisión. |
+| `fin-stream` | `event.sender.send` | Main ➔ Renderer | Notifica fin de transmisión y persiste sesión. |
 | `detener-generacion` | `ipcMain.on` | Renderer ➔ Main | Cancela la petición HTTP vía `AbortController`. |
 | `seleccionar-archivo` | `ipcMain.handle` | Renderer ⇄ Main | Diálogo nativo de selección de archivos. |
-| `obtener-modelos` | `ipcMain.handle` | Renderer ⇄ Main | Consulta modelos disponibles en Ollama. |
+| `seleccionar-carpeta-workspace` | `ipcMain.handle` | Renderer ⇄ Main | Diálogo nativo para vincular carpeta a una sesión. |
+| `obtener-modelos` | `ipcMain.handle` | Renderer ⇄ Main | Consulta modelos disponibles en Ollama (`/api/tags`). |
 | `cambiar-modelo` | `ipcMain.handle` | Renderer ⇄ Main | Cambia el modelo activo en tiempo real. |
-| `obtener-skills` | `ipcMain.handle` | Renderer ⇄ Main | Devuelve las skills para el autocompletado del frontend. |
+| `obtener-skills` | `ipcMain.handle` | Renderer ⇄ Main | Devuelve las skills para autocompletado en el frontend. |
+| `test-conexion-ollama` | `ipcMain.handle` | Renderer ⇄ Main | Valida conectividad y latencia contra el host de Ollama. |
+| `guardar-config-ip` | `ipcMain.handle` | Renderer ⇄ Main | Persiste la configuración del host e idioma en disco. |
