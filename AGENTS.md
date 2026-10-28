@@ -55,7 +55,7 @@ El sistema soporta conmutación en caliente entre múltiples modelos (ej. `qwen3
 ## 4. Workspaces por Sesión (Estilo Antigravity)
 
 Cada conversación en la aplicación puede tener asignada una **carpeta de trabajo (Workspace)** local:
-1. **Asignación:** Haciendo clic derecho sobre cualquier sesión en la barra lateral ➔ `📂 Asignar Workspace`.
+1. **Asignación en Creación:** Al pulsar el botón `+` para crear una nueva conversación, se abre una ventana modal que solicita elegir el path del workspace. Incluye la barra con la ruta seleccionada y el botón `Examinar...` (`Browse...`) para abrir el selector de carpetas nativo de macOS (o la opción de iniciar "Sin Workspace").
 2. **Contexto Automático:** Si una sesión tiene un workspace asignado, el agente inyecta de forma autónoma el mapa y contenido de los archivos relevantes como contexto inicial. No es necesario usar prefijos `/lee` ni comandos manuales: el modelo sabe qué archivos existen y cómo están estructurados.
 3. **Indicador Visual:** La barra superior muestra una píldora con el nombre del repositorio activo (`📂 <nombre-carpeta>`), y la sesión en el sidebar muestra el distintivo 📂.
 4. **Edición contextual:** Los comandos de modificación (`edita`, `edita-repo`) y las preguntas operan directamente sobre la raíz del workspace de esa conversación.

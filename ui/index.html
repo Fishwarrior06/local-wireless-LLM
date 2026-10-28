@@ -124,6 +124,38 @@
     </div>
   </div>
 
+  <!-- Modal 3: Nueva Conversación / Selección de Workspace -->
+  <div id="modal-nuevo-workspace">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span>📂</span>
+          <span data-i18n="workspaceModalTitle">Elige tu Workspace</span>
+        </div>
+        <button id="btn-cerrar-modal-workspace" class="btn-icon-subtle" title="Cerrar">✕</button>
+      </div>
+
+      <div class="modal-desc" data-i18n="workspaceModalDesc">
+        Elige la carpeta o repositorio de trabajo para esta conversación. El agente tendrá acceso para leer su estructura y modificar archivos.
+      </div>
+
+      <div class="modal-field">
+        <label class="modal-label" data-i18n="workspacePathLabel">Ruta del Workspace / Carpeta</label>
+        <div class="file-picker-row">
+          <input type="text" id="input-workspace-path" class="modal-input" placeholder="Ninguna carpeta seleccionada..." spellcheck="false" />
+          <button id="btn-browse-workspace" class="btn-secondary" title="Examinar carpeta">
+            <span data-i18n="btnBrowse">Examinar...</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-actions" style="margin-top: 10px;">
+        <button id="btn-crear-sin-workspace" class="btn-secondary" data-i18n="btnWithoutWorkspace">Sin Workspace</button>
+        <button id="btn-confirmar-workspace" class="btn-primary" data-i18n="btnCreateWithWorkspace">Iniciar Conversación</button>
+      </div>
+    </div>
+  </div>
+
 <script>
   // =========================================================================
   // Diccionario de Internacionalización (i18n)
@@ -152,7 +184,14 @@
       modelSwitched: '⚡ Modelo conmutado a:',
       connectedTo: 'Conectado a Tailscale:',
       copyBtn: 'Copiar',
-      copiedBtn: 'Copiado ✓'
+      copiedBtn: 'Copiado ✓',
+      workspaceModalTitle: 'Elige tu Workspace',
+      workspaceModalDesc: 'Selecciona una carpeta o repositorio para darle acceso a esta conversación. El agente podrá leer su estructura y modificar archivos.',
+      workspacePathLabel: 'Ruta del Workspace / Carpeta',
+      workspacePathPlaceholder: 'Ninguna carpeta seleccionada...',
+      btnBrowse: 'Examinar...',
+      btnWithoutWorkspace: 'Sin Workspace',
+      btnCreateWithWorkspace: 'Iniciar Conversación'
     },
     en: {
       conversationsTitle: 'CONVERSATIONS',
@@ -177,7 +216,14 @@
       modelSwitched: '⚡ Model switched to:',
       connectedTo: 'Connected to Tailscale:',
       copyBtn: 'Copy',
-      copiedBtn: 'Copied ✓'
+      copiedBtn: 'Copied ✓',
+      workspaceModalTitle: 'Choose your Workspace',
+      workspaceModalDesc: 'Select a folder or repository to grant this conversation access to your code. The agent will read its structure and edit files.',
+      workspacePathLabel: 'Workspace Path / Folder',
+      workspacePathPlaceholder: 'No folder selected...',
+      btnBrowse: 'Browse...',
+      btnWithoutWorkspace: 'Without Workspace',
+      btnCreateWithWorkspace: 'Start Conversation'
     }
   };
 
@@ -190,6 +236,9 @@
       if (t[key]) el.textContent = t[key];
     });
     input.placeholder = t.promptPlaceholder;
+    if (typeof inputWorkspacePath !== 'undefined' && inputWorkspacePath) {
+      inputWorkspacePath.placeholder = t.workspacePathPlaceholder;
+    }
 
     // Actualizar botones del selector de idioma
     btnLangEs.classList.toggle('activo', idiomaActual === 'es');
@@ -229,6 +278,14 @@
   const btnCerrarModelos = document.getElementById('btn-cerrar-modelos');
   const btnComenzar = document.getElementById('btn-comenzar');
   const modelsList = document.getElementById('models-list');
+
+  // Modal Workspace
+  const modalWorkspace = document.getElementById('modal-nuevo-workspace');
+  const btnCerrarModalWorkspace = document.getElementById('btn-cerrar-modal-workspace');
+  const inputWorkspacePath = document.getElementById('input-workspace-path');
+  const btnBrowseWorkspace = document.getElementById('btn-browse-workspace');
+  const btnCrearSinWorkspace = document.getElementById('btn-crear-sin-workspace');
+  const btnConfirmarWorkspace = document.getElementById('btn-confirmar-workspace');
   
   // Estado
   const SESIONES_KEY = 'local-llm-sesiones';
@@ -552,52 +609,6 @@
     menu.style.left = `${Math.min(e.clientX, window.innerWidth - 180)}px`;
     menu.style.top  = `${Math.min(e.clientY, window.innerHeight - 100)}px`;
 
-    const sesionParaMenu = sesiones.find(s => s.id === sesionId);
-
-    // Botón Asignar / Cambiar Workspace
-    const btnWorkspace = document.createElement('button');
-    btnWorkspace.innerHTML = sesionParaMenu?.carpeta ? '📂 Cambiar Workspace' : '📂 Asignar Workspace';
-    btnWorkspace.onclick = async (ev) => {
-      ev.stopPropagation();
-      cerrarContextMenu();
-      const carpeta = await window.api.seleccionarCarpetaWorkspace();
-      if (carpeta) {
-        const sesion = sesiones.find(s => s.id === sesionId);
-        if (sesion) {
-          sesion.carpeta = carpeta;
-          const t = I18N[idiomaActual];
-          if (sesion.titulo.startsWith(t.newSession) || sesion.titulo === 'Chat Principal') {
-            const folderName = carpeta.split(/[\\/]/).pop();
-            sesion.titulo = folderName;
-          }
-          guardarSesiones();
-          actualizarSidebar();
-          actualizarWorkspaceBar();
-        }
-      }
-    };
-
-    // Botón Quitar Workspace (si tiene)
-    let btnQuitarWorkspace = null;
-    if (sesionParaMenu?.carpeta) {
-      btnQuitarWorkspace = document.createElement('button');
-      btnQuitarWorkspace.innerHTML = '🚫 Quitar Workspace';
-      btnQuitarWorkspace.onclick = (ev) => {
-        ev.stopPropagation();
-        cerrarContextMenu();
-        const sesion = sesiones.find(s => s.id === sesionId);
-        if (sesion) {
-          sesion.carpeta = null;
-          guardarSesiones();
-          actualizarSidebar();
-          actualizarWorkspaceBar();
-        }
-      };
-    }
-
-    const sep0 = document.createElement('div');
-    sep0.className = 'menu-separator';
-
     // Botón Renombrar
     const btnRename = document.createElement('button');
     btnRename.innerHTML = '✏️ Renombrar';
@@ -621,9 +632,6 @@
       eliminarSesion(sesionId);
     };
 
-    menu.appendChild(btnWorkspace);
-    if (btnQuitarWorkspace) menu.appendChild(btnQuitarWorkspace);
-    menu.appendChild(sep0);
     menu.appendChild(btnRename);
     menu.appendChild(sep);
     menu.appendChild(btnDelete);
@@ -738,13 +746,71 @@
     scrollAbajo();
   }
 
-  btnNuevaSesion.addEventListener('click', () => {
+  // Control del Modal de Nueva Conversación / Workspace
+  function abrirModalNuevoWorkspace() {
     if (estaGenerando) return;
+    inputWorkspacePath.value = '';
+    modalWorkspace.classList.add('visible');
+  }
+
+  function cerrarModalNuevoWorkspace() {
+    modalWorkspace.classList.remove('visible');
+  }
+
+  btnNuevaSesion.addEventListener('click', () => {
+    abrirModalNuevoWorkspace();
+  });
+
+  btnCerrarModalWorkspace.addEventListener('click', cerrarModalNuevoWorkspace);
+
+  modalWorkspace.addEventListener('click', (e) => {
+    if (e.target === modalWorkspace) cerrarModalNuevoWorkspace();
+  });
+
+  btnBrowseWorkspace.addEventListener('click', async () => {
+    const carpeta = await window.api.seleccionarCarpetaWorkspace();
+    if (carpeta) {
+      inputWorkspacePath.value = carpeta;
+    }
+  });
+
+  function crearConversacionConConfig(carpetaSeleccionada) {
     const t = I18N[idiomaActual];
     const nuevaId = Date.now();
-    sesiones.unshift({ id: nuevaId, titulo: `${t.newSession} ${sesiones.length + 1}`, mensajes: [], carpeta: null });
+    let titulo = `${t.newSession} ${sesiones.length + 1}`;
+
+    if (carpetaSeleccionada) {
+      const folderName = carpetaSeleccionada.split(/[\\/]/).pop();
+      if (folderName) titulo = folderName;
+    }
+
+    sesiones.unshift({
+      id: nuevaId,
+      titulo,
+      mensajes: [],
+      carpeta: carpetaSeleccionada || null
+    });
+
+    cerrarModalNuevoWorkspace();
     cambiarSesion(nuevaId);
     guardarSesiones();
+  }
+
+  btnConfirmarWorkspace.addEventListener('click', () => {
+    const ruta = inputWorkspacePath.value.trim();
+    crearConversacionConConfig(ruta || null);
+  });
+
+  inputWorkspacePath.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const ruta = inputWorkspacePath.value.trim();
+      crearConversacionConConfig(ruta || null);
+    }
+  });
+
+  btnCrearSinWorkspace.addEventListener('click', () => {
+    crearConversacionConConfig(null);
   });
 
   btnToggle.addEventListener('click', () => {
