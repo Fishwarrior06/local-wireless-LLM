@@ -184,17 +184,18 @@ export function procesarInputUsuario(input, workspacePath = null) {
     // 2. Si hay intención autónoma de crear o editar archivos/tests/código:
     if (tieneIntencionEdicion) {
         // Inyectar archivos específicos si fueron mencionados (ej: "lee AGENTS.md y crea...")
+        let referenciaArchivos = '';
         if (rutaRaizEfectiva) {
             const regexArchivoMencion = /(?:^|\s)["']?([a-zA-Z0-9_\-\.\/]+\.(?:js|mjs|cjs|ts|tsx|jsx|html|css|json|md|txt|py|java|c|cpp|h|rs|go|sh|yaml|yml|toml|sql))["']?(?:\?|\!|,|\s|$)/gi;
             let mArch;
             while ((mArch = regexArchivoMencion.exec(promptFinal)) !== null) {
                 const candidato = mArch[1];
                 const ruta = resolverArchivoEnWorkspace(rutaRaizEfectiva, candidato);
-                if (ruta && fs.existsSync(ruta) && fs.statSync(ruta).isFile() && !contexto.includes(`=== CONTENIDO DE: ${candidato}`)) {
+                if (ruta && fs.existsSync(ruta) && fs.statSync(ruta).isFile() && !referenciaArchivos.includes(`=== ${candidato}`)) {
                     try {
                         const contenido = fs.readFileSync(ruta, 'utf-8');
                         const rutaRelativa = path.relative(rutaRaizEfectiva, ruta) || candidato;
-                        contexto += `=== CONTENIDO DE REFERENCIA: ${rutaRelativa} ===\n${contenido}\n=== FIN REFERENCIA: ${rutaRelativa} ===\n\n`;
+                        referenciaArchivos += `=== CONTENIDO DE REFERENCIA: ${rutaRelativa} ===\n${contenido}\n=== FIN REFERENCIA: ${rutaRelativa} ===\n\n`;
                     } catch {}
                 }
             }
@@ -203,28 +204,44 @@ export function procesarInputUsuario(input, workspacePath = null) {
         try {
             const { archivos, totalBytes, limitAlcanzado } = leerCarpetaRecursiva(rutaRaizEfectiva);
             const { resumen, kbTotal } = formatearContextoCarpeta(rutaRaizEfectiva, archivos, totalBytes, limitAlcanzado);
-            contexto += [
-                `Eres un agente de modificación y creación de código autónomo. Se te proporciona el contenido de un repositorio y una instrucción en lenguaje natural.`,
-                `Tu tarea es devolver ÚNICAMENTE un array JSON válido con los archivos que necesiten ser CREADOS o MODIFICADOS para cumplir con la instrucción.`,
-                `Cada elemento del array debe tener exactamente dos campos:`,
-                `  - "ruta": string con la ruta relativa del archivo desde la raíz del workspace (ej: "src/test/commands.test.js"). Puede ser un archivo NUEVO o una ruta dentro de una carpeta nueva.`,
-                `  - "contenido": string con el código completo, ejecutable y final del archivo.`,
-                `REGLAS ESTRICTAS:`,
-                `  - Puedes proponer archivos NUEVOS o modificar existentes.`,
-                `  - Usa siempre rutas relativas a la raíz del workspace.`,
-                `  - NO uses bloques markdown (no uses \`\`\`json). Devuelve ÚNICAMENTE el array JSON puro.`,
-                `  - NO agregues texto antes ni después del JSON.`,
-                ``,
+
+            // La instrucción de sistema se envía por separado en systemPrompt (rol 'system' en Ollama),
+            // lo que evita que el modelo la olvide por el efecto de recency bias al tener 100KB+ de repo.
+            // El promptFinal solo lleva el contenido del repo + instrucción del usuario.
+            // Al final se añade el prefijo `[` para forzar que el modelo complete en JSON directamente.
+            const instruccionSistema = [
+                `Eres un agente autónomo de creación y modificación de código.`,
+                `TAREA: Analiza el repositorio y las referencias proporcionadas, y aplica la instrucción del usuario.`,
+                `FORMATO DE RESPUESTA OBLIGATORIO:`,
+                `  Devuelve EXCLUSIVAMENTE un array JSON válido. Sin texto previo, sin explicaciones, sin bloques markdown.`,
+                `  Cada elemento debe tener:`,
+                `    - "ruta": ruta relativa del archivo desde la raíz del workspace (ej: "src/test/foo.test.js")`,
+                `    - "contenido": código completo y funcional del archivo`,
+                `REGLAS ABSOLUTAS:`,
+                `  - NUNCA escribas texto antes del JSON. Tu primera respuesta debe ser el carácter [`,
+                `  - NUNCA uses bloques \`\`\`json ni \`\`\` de ningún tipo`,
+                `  - NUNCA expliques lo que vas a hacer. Solo genera el JSON.`,
+                `  - Puedes crear archivos nuevos en rutas nuevas (el sistema crea las carpetas automáticamente)`,
+                `  - Si la instrucción pide archivos en src/test/, usa rutas como "src/test/archivo.test.js"`,
+            ].join('\n');
+
+            // El contexto del usuario lleva: referencias de archivos pedidos + mapa del repo + instrucción
+            const promptEditaRepo = [
+                referenciaArchivos,
                 `=== REPOSITORIO ===`,
                 resumen,
                 `===================`,
-                ``
+                ``,
+                `INSTRUCCIÓN DEL USUARIO: ${promptFinal}`,
+                ``,
+                `IMPORTANTE: Responde ÚNICAMENTE con el array JSON. Empieza con [`,
             ].join('\n');
 
             return {
-                promptFinal: `Instrucción: ${promptFinal}`,
-                contexto,
+                promptFinal: promptEditaRepo,
+                contexto: '',  // vacío: toda la info ya está en promptFinal e instruccionSistema
                 modoEditaRepo: true,
+                instruccionSistema,  // se enviará como rol 'system' en ollama.js
                 workspaceYaCargado: true,
                 info: `[Agente autónomo: ${archivos.length} archivos del workspace cargados para aplicar cambios en disco (${kbTotal} KB)]`,
                 skillAplicada
@@ -289,12 +306,37 @@ export function procesarInputUsuario(input, workspacePath = null) {
                 return { error: 'No se encontraron archivos compatibles en el repositorio.' };
             }
             const { resumen, kbTotal } = formatearContextoCarpeta(rutaRaizEfectiva, archivos, totalBytes, limitAlcanzado);
-            contexto += `Eres un agente de modificación y creación de código. Se te proporciona el contenido de un repositorio y una instrucción.\nTu tarea es devolver ÚNICAMENTE un array JSON válido con los archivos que necesiten ser modificados o CREADOS.\nCada elemento del array debe tener exactamente dos campos: "ruta" (string con la ruta relativa del archivo, pudiendo ser un archivo nuevo) y "contenido" (string con el código completo y final del archivo).\nPuedes incluir archivos nuevos o crear nuevas rutas si la instrucción lo solicita.\nNo incluyas explicaciones, comentarios, bloques markdown ni texto fuera del JSON.\n\n=== REPOSITORIO ===\n${resumen}===================\n\n`;
-            promptFinal = `Instrucción: ${instruccion}`;
+
+            const instruccionSistema = [
+                `Eres un agente autónomo de creación y modificación de código.`,
+                `TAREA: Analiza el repositorio proporcionado y aplica la instrucción del usuario generando los archivos necesarios.`,
+                `FORMATO DE RESPUESTA OBLIGATORIO:`,
+                `  Devuelve EXCLUSIVAMENTE un array JSON válido. Sin texto previo, sin explicaciones, sin bloques markdown.`,
+                `  Cada elemento debe tener:`,
+                `    - "ruta": ruta relativa del archivo desde la raíz del workspace`,
+                `    - "contenido": código completo y funcional del archivo`,
+                `REGLAS ABSOLUTAS:`,
+                `  - NUNCA escribas texto antes del JSON. Tu primera respuesta debe ser el carácter [`,
+                `  - NUNCA uses bloques \`\`\`json ni \`\`\` de ningún tipo`,
+                `  - NUNCA expliques lo que vas a hacer. Solo genera el JSON.`,
+                `  - Puedes crear archivos en rutas nuevas (las carpetas se crean automáticamente)`,
+            ].join('\n');
+
+            const promptEditaRepo = [
+                `=== REPOSITORIO ===`,
+                resumen,
+                `===================`,
+                ``,
+                `INSTRUCCIÓN DEL USUARIO: ${instruccion}`,
+                ``,
+                `IMPORTANTE: Responde ÚNICAMENTE con el array JSON. Empieza con [`,
+            ].join('\n');
+
             return {
-                promptFinal,
-                contexto,
+                promptFinal: promptEditaRepo,
+                contexto: '',
                 modoEditaRepo: true,
+                instruccionSistema,
                 workspaceYaCargado: true,
                 info: `[Mac: ${archivos.length} archivos del repositorio cargados para edición múltiple (${kbTotal} KB)${limitAlcanzado ? ' — límite alcanzado' : ''}]`,
                 skillAplicada

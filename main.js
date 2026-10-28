@@ -352,8 +352,14 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
     //     tokens, el modelo ya los vio y los recuerda via su KV-cache.
     //   - Si commands.js ya cargó un archivo/repo explícito (workspaceYaCargado, /lee, etc.):
     //     solo mapa estructural para complementar sin duplicar.
+    //
+    // En modoEditaRepo: commands.js genera su propia instruccionSistema (la restricción JSON),
+    // que reemplaza al systemPrompt del workspace para que el modelo no la olvide por recency bias.
     let systemPrompt = '';
-    if (carpeta && !parsed.modoEdicion && !parsed.modoCreacion && !parsed.modoEditaRepo) {
+    if (parsed.instruccionSistema) {
+        // Modo agente autónomo: la instrucción JSON forzada tiene prioridad absoluta como system role
+        systemPrompt = parsed.instruccionSistema;
+    } else if (carpeta && !parsed.modoEdicion && !parsed.modoCreacion && !parsed.modoEditaRepo) {
         try {
             const { archivos, totalBytes, limitAlcanzado } = leerCarpetaRecursiva(carpeta);
             if (archivos.length > 0) {
@@ -379,17 +385,16 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
         }
     }
 
-    // El promptCompleto ya no lleva el contexto del workspace (ahora va en systemPrompt).
-    // Solo incluye lo que commands.js procesó: contexto de archivo/skill + instrucción.
+    // El promptCompleto lleva el contenido del repo + instrucción del usuario.
+    // En modoEditaRepo, parsed.contexto es '' (vacío) y parsed.promptFinal ya contiene todo estructurado.
     const promptCompleto = `${parsed.contexto}${parsed.promptFinal}`.trim();
     abortController = new AbortController();
 
     try {
         const respuestaFinal = await generarStream({
             prompt: promptCompleto,
-            // Workspace e instrucciones de sistema como rol 'system' (fuera del historial visible)
+            // instruccionSistema (restricción JSON) o workspace como rol 'system'
             systemPrompt,
-            // Pasar historial de la sesión para que el modelo recuerde el contexto previo.
             // En modos de edición/creación/skill usamos historial vacío para no contaminar el contexto.
             historial: (parsed.modoEdicion || parsed.modoCreacion || parsed.modoEditaRepo || parsed.skillAplicada)
                 ? []
