@@ -153,16 +153,13 @@ export function procesarInputUsuario(input, workspacePath = null) {
     const rutaRaizEfectiva = workspacePath || config.projectRoot;
 
     // ── Detección autónoma de creación/edición en lenguaje natural ─────────────
-    // Si la sesión tiene un Workspace asignado y el usuario expresa la intención
-    // de crear, modificar, generar tests o archivos (ej. "lee AGENTS.md y crea tests..."):
-    const tieneIntencionEdicion = workspacePath && (
-        detectarIntencionEdicionAutonoma(promptFinal) ||
-        (matchLectura && detectarIntencionEdicionAutonoma(matchLectura[3] || ''))
-    );
 
-    // 1. Si es solo creación de carpeta pura (y NO pide crear archivos/código al mismo tiempo):
+    // 1. Prioridad máxima: creación de carpeta pura en lenguaje natural.
+    // Se evalúa ANTES que detectarIntencionEdicionAutonoma porque palabras como
+    // "crea" y "carpeta" también disparan esa función, causando que el modo
+    // modoEditaRepo intercepte el request y falle al no recibir JSON del LLM.
     const carpetaSolicitada = extraerIntencionCrearCarpeta(promptFinal);
-    if (carpetaSolicitada && workspacePath && !tieneIntencionEdicion) {
+    if (carpetaSolicitada && workspacePath) {
         return {
             promptFinal,
             contexto,
@@ -171,6 +168,13 @@ export function procesarInputUsuario(input, workspacePath = null) {
             skillAplicada
         };
     }
+
+    // Si la sesión tiene un Workspace asignado y el usuario expresa la intención
+    // de crear, modificar, generar tests o archivos (ej. "lee AGENTS.md y crea tests..."):
+    const tieneIntencionEdicion = workspacePath && (
+        detectarIntencionEdicionAutonoma(promptFinal) ||
+        (matchLectura && detectarIntencionEdicionAutonoma(matchLectura[3] || ''))
+    );
 
     // 2. Si hay intención autónoma de crear o editar archivos/tests/código:
     if (tieneIntencionEdicion) {
