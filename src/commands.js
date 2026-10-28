@@ -156,7 +156,12 @@ export function procesarInputUsuario(input, workspacePath = null) {
         };
     }
 
-    if (matchEdicion) {
+    // ── Combinaciones de instrucciones en lenguaje natural (ej: "lee X y crea/modifica Y") ──
+    // Si el usuario empieza con "lee X" pero a continuación pide crear/modificar/hacer tests,
+    // NO debe detenerse solo en modo lectura, sino activar el flujo autónomo de creación/edición.
+    if (workspacePath && matchLectura && detectarIntencionEdicionAutonoma(matchLectura[3] || '')) {
+        // Dejar que el flujo continúe hacia la detección autónoma
+    } else if (matchEdicion) {
         modoEdicion = true;
         const archivoBuscado = (matchEdicion[1] || matchEdicion[2]).trim();
         const rutaCompleta = resolverArchivoEnWorkspace(rutaRaizEfectiva, archivoBuscado);
