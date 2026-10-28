@@ -673,28 +673,71 @@
   // Markdown & Artifacts
   // =========================================================================
   function formatearMarkdownSimple(texto) {
-    const t = I18N[idiomaActual];
-    let out = texto.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    if (!texto) return '';
+    let out = texto;
 
-    out = out.replace(/⚡ \[Skill activada: ([^\]]+)\]/g, '<div class="callout-pill">✦ SKILL: $1</div>');
-    out = out.replace(/\[Mac: ([^\]]+)\]/g, '<div class="callout-pill" style="border-color: rgba(0,122,255,0.4); color: #5AC8FA;">✦ CONTEXTO: $1</div>');
-
-    out = out.replace(/```([a-zA-Z0-9_-]*)\r?\n([\s\S]*?)```/g, (match, lang, code) => {
-      const lenguaje = lang || 'code';
-      const cleanCode = code.trim();
-      return `
-        <div class="code-artifact">
-          <div class="code-header">
-            <span>${lenguaje}</span>
-            <button class="btn-copy" onclick="copiarAlPortapapeles(this)">${t.copyBtn}</button>
-          </div>
-          <pre><code>${cleanCode}</code></pre>
-        </div>
-      `;
+    // Extraer bloques de código primero para no procesarlos
+    const bloques = [];
+    out = out.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+      const idx = bloques.length;
+      const langLabel = lang || 'code';
+      const escaped = code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      bloques.push(`<div class="code-artifact"><div class="code-header"><span>${langLabel}</span><button class="btn-copy" onclick="copiarCodigo(this)">Copiar</button></div><pre><code>${escaped}</code></pre></div>`);
+      return `%%BLOQUE_${idx}%%`;
     });
 
+    // Blockquotes
+    out = out.replace(/^&gt; ?(.+)$/gm, '<blockquote>$1</blockquote>');
+    out = out.replace(/^> ?(.+)$/gm, '<blockquote>$1</blockquote>');
+
+    // Headings
+    out = out.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    out = out.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    out = out.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+    // HR
+    out = out.replace(/^---+$/gm, '<hr>');
+
+    // Bold + italic combinado
+    out = out.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    // Bold
+    out = out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // Italic
+    out = out.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    // Inline code
     out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
-    out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+    // Listas no ordenadas
+    out = out.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
+    out = out.replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`);
+
+    // Listas ordenadas
+    out = out.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+
+    // URLs clickeables (que no estén ya en un tag html)
+    out = out.replace(/(?<![="'])https?:\/\/[^\s<>"]+/g, url => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`);
+
+    // Mac callouts [Mac: text]
+    out = out.replace(/\[Mac: ([^\]]+)\]/g, '<div class="callout-pill" style="border-color: rgba(0,122,255,0.3)">⌘ $1</div>');
+
+    // Párrafos: separar por doble salto de línea
+    const parrafos = out.split(/\n\n+/);
+    out = parrafos.map(p => {
+      p = p.trim();
+      if (!p) return '';
+      // Si ya es un elemento de bloque, no envolver
+      if (/^<(h[1-6]|ul|ol|blockquote|div|hr|%%BLOQUE)/.test(p)) return p;
+      // Saltos simples de línea dentro del párrafo → <br>
+      return '<p>' + p.replace(/\n/g, '<br>') + '</p>';
+    }).join('\n');
+
+    // Restaurar bloques de código
+    bloques.forEach((bloque, i) => {
+      out = out.replace(`%%BLOQUE_${i}%%`, bloque);
+      // También dentro de <p> tags si quedó ahí
+      out = out.replace(`<p>%%BLOQUE_${i}%%</p>`, bloque);
+    });
+
     return out;
   }
 
@@ -711,6 +754,9 @@
       }, 1500);
     }
   };
+
+  // Alias used by the improved markdown formatter
+  window.copiarCodigo = window.copiarAlPortapapeles;
 
   function crearBurbujaDOM(clase, texto) {
     const div = document.createElement('div');
@@ -797,11 +843,13 @@
     sesionActual.mensajes.push({ rol: 'ia', texto: '' });
     currentIaMessage = crearBurbujaDOM('ia', '');
     
-    // Resetear buffer de stream para este nuevo mensaje
+    // Resetear estado del stream
     streamBuffer = '';
-    streamTextoBase = '';
-    clearTimeout(streamFlushTimer);
-    streamFlushTimer = null;
+    streamTextoAcumulado = '';
+    if (streamRafId) { cancelAnimationFrame(streamRafId); streamRafId = null; }
+
+    // Mostrar skeleton mientras la IA piensa
+    mostrarSkeleton();
 
     window.api.enviarMensaje(texto.trim(), historialParaIA);
     
@@ -820,66 +868,74 @@
   }
 
   // =========================================================================
-  // Streaming de la IA — Renderizado suave por segmentos
+  // Streaming de la IA — Skeleton + Renderizado por Párrafos
   // =========================================================================
 
-  // Buffer que acumula tokens crudos entre flushes
   let streamBuffer = '';
-  // Texto ya confirmado/renderizado (sin el segmento en vuelo)
-  let streamTextoBase = '';
-  let streamFlushTimer = null;
+  let streamTextoAcumulado = '';
+  let streamRafId = null;
 
-  // Parte del texto que ya fue escrita como HTML fijo en la burbuja
-  // Los nuevos segmentos se añaden como <span class="stream-segment"> con fade-in
-  function flushStream() {
-    if (!currentIaMessage || streamBuffer === '') return;
+  function mostrarSkeleton() {
+    if (!currentIaMessage) return;
+    currentIaMessage.innerHTML = `
+      <div class="skeleton-loader">
+        <div class="skeleton-line" style="width: 85%"></div>
+        <div class="skeleton-line" style="width: 65%"></div>
+        <div class="skeleton-line" style="width: 78%"></div>
+      </div>`;
+  }
+
+  function ocultarSkeleton() {
+    const sk = currentIaMessage?.querySelector('.skeleton-loader');
+    if (sk) sk.remove();
+  }
+
+  function renderStream() {
+    streamRafId = null;
+    if (!currentIaMessage) return;
 
     const sesionActual = sesiones.find(s => s.id === sesionActivaId);
     if (!sesionActual) return;
     const ultimoMsg = sesionActual.mensajes[sesionActual.mensajes.length - 1];
 
-    streamTextoBase += streamBuffer;
+    streamTextoAcumulado += streamBuffer;
     streamBuffer = '';
-    ultimoMsg.texto = streamTextoBase;
+    ultimoMsg.texto = streamTextoAcumulado;
 
-    // Re-renderizar con el segmento nuevo envuelto en span animado
-    // Renderizamos el texto base como HTML y añadimos el span al final del texto raw
-    currentIaMessage.innerHTML = formatearMarkdownSimple(streamTextoBase);
+    // Ocultar skeleton en primer render
+    ocultarSkeleton();
+    currentIaMessage.innerHTML = formatearMarkdownSimple(streamTextoAcumulado);
     scrollAbajo();
   }
 
   window.api.onStream((chunk) => {
     if (!currentIaMessage) return;
     streamBuffer += chunk;
-
-    // Hacemos flush cada ~60ms O cuando llegue un salto de línea (final de segmento natural)
-    if (!streamFlushTimer) {
-      streamFlushTimer = setTimeout(() => {
-        streamFlushTimer = null;
-        flushStream();
-      }, 60);
+    // Usar requestAnimationFrame — se sincroniza con el refresh de pantalla (60fps)
+    // y no bloquea el hilo principal
+    if (!streamRafId) {
+      streamRafId = requestAnimationFrame(renderStream);
     }
-    // Flush inmediato ante salto de línea para que los párrafos aparezcan limpios
-    if (chunk.includes('\n')) {
-      clearTimeout(streamFlushTimer);
-      streamFlushTimer = null;
-      flushStream();
+    // Flush inmediato en saltos de línea dobles (fin de párrafo)
+    if (chunk.includes('\n\n')) {
+      if (streamRafId) cancelAnimationFrame(streamRafId);
+      streamRafId = null;
+      renderStream();
     }
   });
 
   window.api.onFinStream(() => {
-    // Flush final de lo que quedó en el buffer
-    clearTimeout(streamFlushTimer);
-    streamFlushTimer = null;
-    flushStream();
+    // Flush final
+    if (streamRafId) cancelAnimationFrame(streamRafId);
+    streamRafId = null;
+    if (streamBuffer) renderStream();
 
-    // Resetear estado del stream
     streamBuffer = '';
-    streamTextoBase = '';
+    streamTextoAcumulado = '';
 
     estaGenerando = false;
     btnStop.style.display = 'none';
-    guardarSesiones(); // Persistir la respuesta completa de la IA
+    guardarSesiones();
   });
 
   btnStop.addEventListener('click', () => {
