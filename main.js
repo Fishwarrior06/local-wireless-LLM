@@ -245,28 +245,38 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
         event.sender.send('stream-ia', `[Analizando repositorio para edición múltiple...]\n\n`);
     }
 
-    // Si la sesión tiene un workspace asignado y el mensaje no es ya un comando con contexto cargado,
-    // inyectar automáticamente el contexto del repositorio/carpeta como contexto del sistema.
+    // ── Workspace Context ──────────────────────────────────────────────────────
+    // Si hay workspace asignado, inyectarlo como mensaje 'system' en Ollama en lugar
+    // de concatenarlo al prompt del usuario. Esto evita el "recency bias": los modelos
+    // pequeños (< 14B) tienden a responder sobre lo que está más cercano a la instrucción,
+    // ignorando el historial y confundiendo el código del repo con el sujeto de la pregunta.
     //
-    // La flag `parsed.workspaceYaCargado` se activa cuando commands.js ya leyó el repo completo
-    // (ej. /lee-repo, /edita-repo). En ese caso solo inyectamos el mapa de estructura para
-    // no duplicar tokens. Si hay un archivo específico cargado (=== CONTENIDO DE:), también
-    // acompañamos con el mapa. En cualquier otro mensaje normal, se inyecta el repo completo.
-    let workspaceContexto = '';
+    // Estrategia de envío por turno de sesión:
+    //   - Primer mensaje (historial vacío): repo completo → el modelo conoce todo el código.
+    //   - Mensajes siguientes (historial > 0): solo mapa de archivos → no re-enviar los mismos
+    //     tokens, el modelo ya los vio y los recuerda via su KV-cache.
+    //   - Si commands.js ya cargó un archivo/repo explícito (workspaceYaCargado, /lee, etc.):
+    //     solo mapa estructural para complementar sin duplicar.
+    let systemPrompt = '';
     if (carpeta && !parsed.modoEdicion && !parsed.modoEditaRepo) {
         try {
             const { archivos, totalBytes, limitAlcanzado } = leerCarpetaRecursiva(carpeta);
             if (archivos.length > 0) {
-                const mapEstructura = `Estructura del workspace (${archivos.length} archivos${limitAlcanzado ? ' — límite alcanzado, hay más archivos' : ''}):\n` +
-                    archivos.map(a => `- ${a.ruta}`).join('\n') + '\n\n';
+                const mapEstructura =
+                    `Workspace: ${carpeta}\n` +
+                    `Archivos disponibles (${archivos.length}${limitAlcanzado ? ', hay más fuera del límite de carga' : ''}):\n` +
+                    archivos.map(a => `- ${a.ruta}`).join('\n') + '\n';
 
-                if (parsed.workspaceYaCargado || parsed.contexto.includes('=== CONTENIDO DE:')) {
-                    // Ya hay contexto de archivo/repo: solo incluir el mapa para no duplicar tokens
-                    workspaceContexto = mapEstructura;
-                } else {
-                    // Mensaje de conversación normal: inyectar repo completo
+                const esConversacionNueva = historial.filter(m => m.texto?.trim()).length === 0;
+                const tieneContextoComando = parsed.workspaceYaCargado || parsed.contexto.includes('=== CONTENIDO DE:');
+
+                if (!tieneContextoComando && esConversacionNueva) {
+                    // Primer turno sin comando explícito: enviar el repo completo como 'system'
                     const { resumen } = formatearContextoCarpeta(carpeta, archivos, totalBytes, limitAlcanzado);
-                    workspaceContexto = resumen;
+                    systemPrompt = resumen;
+                } else {
+                    // Turnos siguientes o si commands.js ya tiene el contexto: solo mapa
+                    systemPrompt = mapEstructura;
                 }
             }
         } catch (e) {
@@ -274,12 +284,16 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
         }
     }
 
-    const promptCompleto = `${workspaceContexto}${parsed.contexto}Instrucción: ${parsed.promptFinal}`.trim();
+    // El promptCompleto ya no lleva el contexto del workspace (ahora va en systemPrompt).
+    // Solo incluye lo que commands.js procesó: contexto de archivo/skill + instrucción.
+    const promptCompleto = `${parsed.contexto}${parsed.promptFinal}`.trim();
     abortController = new AbortController();
 
     try {
         const respuestaFinal = await generarStream({
             prompt: promptCompleto,
+            // Workspace e instrucciones de sistema como rol 'system' (fuera del historial visible)
+            systemPrompt,
             // Pasar historial de la sesión para que el modelo recuerde el contexto previo.
             // En modos de edición/skill usamos historial vacío para no contaminar el contexto.
             historial: (parsed.modoEdicion || parsed.modoEditaRepo || parsed.skillAplicada)

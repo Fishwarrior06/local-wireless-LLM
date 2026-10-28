@@ -19,20 +19,33 @@ export async function listarModelosOllama() {
 /**
  * Genera una respuesta en streaming usando /api/chat de Ollama.
  * @param {Object} opts
- * @param {string} opts.prompt - Mensaje actual del usuario (texto plano)
- * @param {Array}  opts.historial - Array de {rol: 'yo'|'ia', texto: string} de la sesión actual
+ * @param {string} opts.prompt       - Mensaje actual del usuario (texto plano)
+ * @param {string} opts.systemPrompt - Contexto del workspace/repo como mensaje 'system'.
+ *                                     Se coloca antes del historial para que el modelo lo
+ *                                     trate como conocimiento de fondo y no como parte de
+ *                                     la conversación, evitando el "recency bias".
+ * @param {Array}  opts.historial    - Array de {rol: 'yo'|'ia', texto: string} de la sesión actual
  * @param {AbortSignal} opts.signal
  * @param {Function} opts.onChunk
  * @param {string|null} opts.model
  */
-export async function generarStream({ prompt, historial = [], signal, onChunk, model = null }) {
+export async function generarStream({ prompt, systemPrompt = '', historial = [], signal, onChunk, model = null }) {
     const modeloUso = model || config.currentModel;
     const url = `http://${config.ollamaHost}/api/chat`;
 
+    const messages = [];
+
+    // El contexto del workspace va como rol 'system' ANTES del historial.
+    // Esto evita que el modelo confunda el código del repositorio con la instrucción
+    // actual y previene el sesgo de recencia (recency bias) en modelos pequeños.
+    if (systemPrompt && systemPrompt.trim()) {
+        messages.push({ role: 'system', content: systemPrompt.trim() });
+    }
+
     // Convertir historial al formato de mensajes de Ollama (excluyendo el último msg vacío de la IA)
-    const messages = historial
+    historial
         .filter(m => m.texto && m.texto.trim() !== '')
-        .map(m => ({
+        .forEach(m => messages.push({
             role: m.rol === 'yo' ? 'user' : 'assistant',
             content: m.texto
         }));
