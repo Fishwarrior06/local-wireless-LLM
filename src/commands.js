@@ -47,6 +47,59 @@ function resolverArchivoEnWorkspace(rutaRaiz, rutaParam) {
     return buscarArchivoRecursivo(rutaRaiz, soloNombre);
 }
 
+/**
+ * Detecta si el texto del usuario en lenguaje natural solicita crear una carpeta/directorio.
+ * Soporta español e inglés.
+ * Ej:
+ *  - "crea una carpeta llamada /test adentro de /src. solo haz eso"
+ *  - "create a folder named test inside of src"
+ *  - "make folder src/test"
+ * Retorna la ruta relativa normalizada (ej: "src/test") o null.
+ */
+function extraerIntencionCrearCarpeta(texto) {
+    if (!texto) return null;
+
+    // Caso 1: "carpeta [llamada/named/called] X adentro/dentro/inside/in Y"
+    const m1 = texto.match(/\b(?:carpeta|directorio|folder|directory|dir)\s+(?:llamad[ao]|called|named)?\s*([^\s]+)\s+(?:adentro|dentro|inside(?:\s+of)?|in)\s+([^\s\.,;!]+)/i);
+    if (m1) {
+        const sub = m1[1].replace(/^[\/\\\"'`]+|[\/\\\"'`]+$/g, '');
+        const padre = m1[2].replace(/^[\/\\\"'`]+|[\/\\\"'`]+$/g, '');
+        if (sub && padre && !['a', 'the', 'una', 'la'].includes(sub.toLowerCase())) {
+            return `${padre}/${sub}`;
+        }
+    }
+
+    // Caso 2: "(adentro|dentro|inside|in) Y [,] crea [la|una|a] carpeta [llamada] X"
+    const m2 = texto.match(/(?:adentro|dentro|inside(?:\s+of)?|in)\s+([^\s\.,;!]+)[\s,]+(?:crea|crear|haz|hacer|create|make|mkdir)\s+(?:una\s+|la\s+|a\s+|the\s+)?(?:carpeta|directorio|folder|directory|dir)\s+(?:llamad[ao]|called|named)?\s*([^\s\.,;!]+)/i);
+    if (m2) {
+        const padre = m2[1].replace(/^[\/\\\"'`]+|[\/\\\"'`]+$/g, '');
+        const sub = m2[2].replace(/^[\/\\\"'`]+|[\/\\\"'`]+$/g, '');
+        if (sub && padre) return `${padre}/${sub}`;
+    }
+
+    // Caso 3: "crea/create [la|a] carpeta [llamada] <ruta>" (ej: "crea la carpeta src/test" o "create folder src/test")
+    const m3 = texto.match(/\b(?:crea|crear|haz|hacer|create|make|mkdir|new)\s+(?:una\s+|la\s+|a\s+|the\s+)?(?:carpeta|directorio|folder|directory|dir)\s+(?:llamad[ao]|called|named)?\s*([a-zA-Z0-9_\-\.\/]+)/i);
+    if (m3) {
+        const candidata = m3[1].replace(/^[\/\\\"'`]+|[\/\\\"'`]+$/g, '');
+        if (candidata && !['una', 'la', 'el', 'un', 'nuevo', 'nueva', 'a', 'the', 'new'].includes(candidata.toLowerCase())) {
+            return candidata;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Detecta si el texto en lenguaje natural expresa intención de escribir/crear/modificar código en el workspace.
+ * Soporta tanto español como inglés (create, update, edit, modify, change, add, write, etc.).
+ */
+function detectarIntencionEdicionAutonoma(texto) {
+    if (!texto) return false;
+    const regexAccion = /\b(?:crea|crear|genera|generar|agrega|agregar|añade|añadir|haz|hacer|escribe|escribir|modifica|modificar|edita|editar|actualiza|actualizar|corrige|corregir|implementa|implementar|create|creating|make|making|add|adding|write|writing|generate|generating|modify|modifying|edit|editing|update|updating|change|changing|fix|fixing|refactor|refactoring|implement|implementing)\b/i;
+    const regexObjetivo = /\b(?:archivo|archivos|fichero|ficheros|carpeta|carpetas|folder|folders|directorio|directorios|directory|directories|test|tests|testing|prueba|pruebas|unit\s*tests?|código|codigo|code|función|funcion|function|functions|método|metodo|method|methods|clase|class|classes|módulo|modulo|module|modules|component|components|componente|componentes|endpoint|endpoints|file|files|\.(?:js|ts|jsx|tsx|html|css|json|py|md|sh))\b/i;
+    return regexAccion.test(texto) && regexObjetivo.test(texto);
+}
+
 export function procesarInputUsuario(input, workspacePath = null) {
     let contexto = "";
     let promptFinal = input;
@@ -89,6 +142,19 @@ export function procesarInputUsuario(input, workspacePath = null) {
     const matchCreacion = promptFinal.match(regexCreacion);
 
     const rutaRaizEfectiva = workspacePath || config.projectRoot;
+
+    // ── Detección autónoma en lenguaje natural (sin comandos '/') ─────────────
+    // Si la sesión tiene un Workspace asignado y el usuario pide crear una carpeta:
+    const carpetaSolicitada = extraerIntencionCrearCarpeta(promptFinal);
+    if (carpetaSolicitada && workspacePath) {
+        return {
+            promptFinal,
+            contexto,
+            crearCarpetaDirecta: carpetaSolicitada,
+            info: `[Creando carpeta: ${carpetaSolicitada}]`,
+            skillAplicada
+        };
+    }
 
     if (matchEdicion) {
         modoEdicion = true;
@@ -260,6 +326,44 @@ export function procesarInputUsuario(input, workspacePath = null) {
                 info: `[Mac: Archivo(s) '${nombres}' inyectado(s) al contexto]`,
                 skillAplicada
             };
+        }
+    }
+
+    // ── Activación autónoma de modificación/creación en lenguaje natural ────────
+    // Si la sesión tiene un workspace vinculado y el usuario pide crear/modificar archivos,
+    // tests o componentes en lenguaje natural, activar automáticamente el modo multi-archivo.
+    if (workspacePath && detectarIntencionEdicionAutonoma(promptFinal)) {
+        try {
+            const { archivos, totalBytes, limitAlcanzado } = leerCarpetaRecursiva(rutaRaizEfectiva);
+            const { resumen, kbTotal } = formatearContextoCarpeta(rutaRaizEfectiva, archivos, totalBytes, limitAlcanzado);
+            contexto += [
+                `Eres un agente de modificación y creación de código autónomo. Se te proporciona el contenido de un repositorio y una instrucción en lenguaje natural.`,
+                `Tu tarea es devolver ÚNICAMENTE un array JSON válido con los archivos que necesiten ser CREADOS o MODIFICADOS para cumplir con la instrucción.`,
+                `Cada elemento del array debe tener exactamente dos campos:`,
+                `  - "ruta": string con la ruta relativa del archivo desde la raíz del workspace (ej: "src/test/commands.test.js"). Puede ser un archivo NUEVO o una ruta dentro de una carpeta nueva.`,
+                `  - "contenido": string con el código completo, ejecutable y final del archivo.`,
+                `REGLAS ESTRICTAS:`,
+                `  - Puedes proponer archivos NUEVOS o modificar existentes.`,
+                `  - Usa siempre rutas relativas a la raíz del workspace.`,
+                `  - NO uses bloques markdown (no uses \`\`\`json). Devuelve ÚNICAMENTE el array JSON puro.`,
+                `  - NO agregues texto antes ni después del JSON.`,
+                ``,
+                `=== REPOSITORIO ===`,
+                resumen,
+                `===================`,
+                ``
+            ].join('\n');
+
+            return {
+                promptFinal: `Instrucción: ${promptFinal}`,
+                contexto,
+                modoEditaRepo: true,
+                workspaceYaCargado: true,
+                info: `[Agente autónomo: ${archivos.length} archivos del workspace cargados para aplicar cambios en disco (${kbTotal} KB)]`,
+                skillAplicada
+            };
+        } catch (e) {
+            console.error('[Autónomo] Error cargando repositorio para edición autónoma:', e.message);
         }
     }
 

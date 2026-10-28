@@ -118,20 +118,44 @@ That's it! You can now chat and code with your local model from anywhere in the 
 
 ---
 
-## ⚡ Quick System Commands (`/`)
+## 🤖 Natural Language Autonomous Agent (No '/' Commands Needed!)
 
-Type `/` in the text box to open the native action menu:
+When working within an active **Workspace** (`📂`), Local-LLM operates as a fully autonomous coding agent. You **do not need** to use slash commands (`/`): simply request actions in plain English or Spanish.
+
+### 💬 Examples of Natural Language Prompts:
+
+- **Create folders:**
+  - *"create a folder named test inside src"*
+  - *"crea una carpeta llamada test adentro de src"*
+  - *"make directory src/components/button"*
+- **Generate new files and tests:**
+  - *"create unit tests for commands.js inside src/test using Jest"*
+  - *"crea los unit tests para commands.js adentro de src/test"*
+  - *"add a helper module in src/utils.js with string formatting utilities"*
+- **Edit and modify existing code:**
+  - *"change main.js to add hello function"*
+  - *"modify src/commands.js to support English natural language queries"*
+  - *"update package.json with test script"*
+
+The agent automatically resolves project paths, creates directories recursively, and applies multi-file code modifications straight to disk.
+
+---
+
+## ⚡ Optional Slash Commands (`/`)
+
+If you prefer explicit control, you can still type `/` to access direct shortcuts:
 
 | Command | Action |
 | :--- | :--- |
-| `/read <file\|folder>` | Injects content of a file or directory into context. |
-| `/read-repo [question]` | Loads and analyzes your current code repository. |
-| `/read-folder <dir>` | Recursively reads a specific folder on your Mac. |
-| `/edit <file> <instruction>` | Modifies and overwrites a file on disk automatically. |
-| `/edit-repo <instruction>` | Multi-file agent: generates structured changes and updates the repo. |
-| `/<skill> [instruction]` | Activates custom skills from the `skills/` folder (e.g., `/refactor`, `/document`, `/test`). |
+| `/crea <file> <instruction>` | Generates a new file and creates all required parent folders on disk. |
+| `/edita <file> <instruction>` | Modifies and overwrites an existing file on disk. |
+| `/edita-repo <instruction>` | Multi-file agent: generates structured changes and creates/modifies files. |
+| `/lee <file\|folder>` | Injects content of a specific file or directory into context. |
+| `/lee-repo [question]` | Loads and inspects the complete codebase repository. |
+| `/lee-carpeta <dir>` | Recursively reads a specific folder on your machine. |
+| `/<skill> [instruction]` | Activates custom skills from `skills/` (e.g., `/refactorizar`, `/testear`, `/documentar`). |
 
-> ⚙️ **Changed your Tailscale IP?**
+> ⚙️ **Changed your Tailscale IP?**  
 > Click the gear icon **⚙️** in the top bar next to the model selector to change the IP address or re-scan models at any time without reinstalling the app.
 
 ---

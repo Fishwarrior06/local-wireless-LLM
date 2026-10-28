@@ -231,6 +231,28 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
         return;
     }
 
+    // Acción directa: Crear carpeta inmediatamente en el Workspace (sin quemar tokens de IA)
+    if (parsed.crearCarpetaDirecta && carpeta) {
+        try {
+            const rutaDestino = path.join(carpeta, parsed.crearCarpetaDirecta);
+            if (!fs.existsSync(rutaDestino)) {
+                fs.mkdirSync(rutaDestino, { recursive: true });
+                // Crear un .gitkeep para que git y el sistema reconozcan la carpeta
+                const gitkeepPath = path.join(rutaDestino, '.gitkeep');
+                if (!fs.existsSync(gitkeepPath)) {
+                    fs.writeFileSync(gitkeepPath, '', 'utf-8');
+                }
+                event.sender.send('stream-ia', `✅ [Carpeta creada exitosamente en el Workspace]: ${parsed.crearCarpetaDirecta}\n\n📁 Ruta completa: ${rutaDestino}`);
+            } else {
+                event.sender.send('stream-ia', `ℹ️ La carpeta ya existe en el Workspace: ${parsed.crearCarpetaDirecta}`);
+            }
+        } catch (err) {
+            event.sender.send('stream-ia', `❌ [Error creando carpeta]: ${err.message}`);
+        }
+        event.sender.send('fin-stream');
+        return;
+    }
+
     if (parsed.skillAplicada) {
         event.sender.send('stream-ia', `⚡ [Skill activada: ${parsed.skillAplicada.nombre.toUpperCase()}]\n`);
     }
