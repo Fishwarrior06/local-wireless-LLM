@@ -152,10 +152,17 @@ export function procesarInputUsuario(input, workspacePath = null) {
 
     const rutaRaizEfectiva = workspacePath || config.projectRoot;
 
-    // ── Detección autónoma en lenguaje natural (sin comandos '/') ─────────────
-    // Si la sesión tiene un Workspace asignado y el usuario pide crear una carpeta:
+    // ── Detección autónoma de creación/edición en lenguaje natural ─────────────
+    // Si la sesión tiene un Workspace asignado y el usuario expresa la intención
+    // de crear, modificar, generar tests o archivos (ej. "lee AGENTS.md y crea tests..."):
+    const tieneIntencionEdicion = workspacePath && (
+        detectarIntencionEdicionAutonoma(promptFinal) ||
+        (matchLectura && detectarIntencionEdicionAutonoma(matchLectura[3] || ''))
+    );
+
+    // 1. Si es solo creación de carpeta pura (y NO pide crear archivos/código al mismo tiempo):
     const carpetaSolicitada = extraerIntencionCrearCarpeta(promptFinal);
-    if (carpetaSolicitada && workspacePath) {
+    if (carpetaSolicitada && workspacePath && !tieneIntencionEdicion) {
         return {
             promptFinal,
             contexto,
@@ -165,12 +172,60 @@ export function procesarInputUsuario(input, workspacePath = null) {
         };
     }
 
-    // ── Combinaciones de instrucciones en lenguaje natural (ej: "lee X y crea/modifica Y") ──
-    // Si el usuario empieza con "lee X" pero a continuación pide crear/modificar/hacer tests,
-    // NO debe detenerse solo en modo lectura, sino activar el flujo autónomo de creación/edición.
-    if (workspacePath && matchLectura && detectarIntencionEdicionAutonoma(matchLectura[3] || '')) {
-        // Dejar que el flujo continúe hacia la detección autónoma
-    } else if (matchEdicion) {
+    // 2. Si hay intención autónoma de crear o editar archivos/tests/código:
+    if (tieneIntencionEdicion) {
+        // Inyectar archivos específicos si fueron mencionados (ej: "lee AGENTS.md y crea...")
+        if (rutaRaizEfectiva) {
+            const regexArchivoMencion = /(?:^|\s)["']?([a-zA-Z0-9_\-\.\/]+\.(?:js|mjs|cjs|ts|tsx|jsx|html|css|json|md|txt|py|java|c|cpp|h|rs|go|sh|yaml|yml|toml|sql))["']?(?:\?|\!|,|\s|$)/gi;
+            let mArch;
+            while ((mArch = regexArchivoMencion.exec(promptFinal)) !== null) {
+                const candidato = mArch[1];
+                const ruta = resolverArchivoEnWorkspace(rutaRaizEfectiva, candidato);
+                if (ruta && fs.existsSync(ruta) && fs.statSync(ruta).isFile() && !contexto.includes(`=== CONTENIDO DE: ${candidato}`)) {
+                    try {
+                        const contenido = fs.readFileSync(ruta, 'utf-8');
+                        const rutaRelativa = path.relative(rutaRaizEfectiva, ruta) || candidato;
+                        contexto += `=== CONTENIDO DE REFERENCIA: ${rutaRelativa} ===\n${contenido}\n=== FIN REFERENCIA: ${rutaRelativa} ===\n\n`;
+                    } catch {}
+                }
+            }
+        }
+
+        try {
+            const { archivos, totalBytes, limitAlcanzado } = leerCarpetaRecursiva(rutaRaizEfectiva);
+            const { resumen, kbTotal } = formatearContextoCarpeta(rutaRaizEfectiva, archivos, totalBytes, limitAlcanzado);
+            contexto += [
+                `Eres un agente de modificación y creación de código autónomo. Se te proporciona el contenido de un repositorio y una instrucción en lenguaje natural.`,
+                `Tu tarea es devolver ÚNICAMENTE un array JSON válido con los archivos que necesiten ser CREADOS o MODIFICADOS para cumplir con la instrucción.`,
+                `Cada elemento del array debe tener exactamente dos campos:`,
+                `  - "ruta": string con la ruta relativa del archivo desde la raíz del workspace (ej: "src/test/commands.test.js"). Puede ser un archivo NUEVO o una ruta dentro de una carpeta nueva.`,
+                `  - "contenido": string con el código completo, ejecutable y final del archivo.`,
+                `REGLAS ESTRICTAS:`,
+                `  - Puedes proponer archivos NUEVOS o modificar existentes.`,
+                `  - Usa siempre rutas relativas a la raíz del workspace.`,
+                `  - NO uses bloques markdown (no uses \`\`\`json). Devuelve ÚNICAMENTE el array JSON puro.`,
+                `  - NO agregues texto antes ni después del JSON.`,
+                ``,
+                `=== REPOSITORIO ===`,
+                resumen,
+                `===================`,
+                ``
+            ].join('\n');
+
+            return {
+                promptFinal: `Instrucción: ${promptFinal}`,
+                contexto,
+                modoEditaRepo: true,
+                workspaceYaCargado: true,
+                info: `[Agente autónomo: ${archivos.length} archivos del workspace cargados para aplicar cambios en disco (${kbTotal} KB)]`,
+                skillAplicada
+            };
+        } catch (e) {
+            console.error('[Autónomo] Error cargando repositorio para edición autónoma:', e.message);
+        }
+    }
+
+    if (matchEdicion) {
         modoEdicion = true;
         const archivoBuscado = (matchEdicion[1] || matchEdicion[2]).trim();
         const rutaCompleta = resolverArchivoEnWorkspace(rutaRaizEfectiva, archivoBuscado);
@@ -315,7 +370,7 @@ export function procesarInputUsuario(input, workspacePath = null) {
         }
     }
 
-    // Detección automática en lenguaje natural si se menciona un archivo existente en el workspace
+    // Detección automática en lenguaje natural si se menciona un archivo existente en el workspace (solo lectura informativa)
     if (rutaRaizEfectiva) {
         const regexArchivoMencion = /(?:^|\s)["']?([a-zA-Z0-9_\-\.\/]+\.(?:js|mjs|cjs|ts|tsx|jsx|html|css|json|md|txt|py|java|c|cpp|h|rs|go|sh|yaml|yml|toml|sql))["']?(?:\?|\!|,|\s|$)/gi;
         let match;
@@ -340,44 +395,6 @@ export function procesarInputUsuario(input, workspacePath = null) {
                 info: `[Mac: Archivo(s) '${nombres}' inyectado(s) al contexto]`,
                 skillAplicada
             };
-        }
-    }
-
-    // ── Activación autónoma de modificación/creación en lenguaje natural ────────
-    // Si la sesión tiene un workspace vinculado y el usuario pide crear/modificar archivos,
-    // tests o componentes en lenguaje natural, activar automáticamente el modo multi-archivo.
-    if (workspacePath && detectarIntencionEdicionAutonoma(promptFinal)) {
-        try {
-            const { archivos, totalBytes, limitAlcanzado } = leerCarpetaRecursiva(rutaRaizEfectiva);
-            const { resumen, kbTotal } = formatearContextoCarpeta(rutaRaizEfectiva, archivos, totalBytes, limitAlcanzado);
-            contexto += [
-                `Eres un agente de modificación y creación de código autónomo. Se te proporciona el contenido de un repositorio y una instrucción en lenguaje natural.`,
-                `Tu tarea es devolver ÚNICAMENTE un array JSON válido con los archivos que necesiten ser CREADOS o MODIFICADOS para cumplir con la instrucción.`,
-                `Cada elemento del array debe tener exactamente dos campos:`,
-                `  - "ruta": string con la ruta relativa del archivo desde la raíz del workspace (ej: "src/test/commands.test.js"). Puede ser un archivo NUEVO o una ruta dentro de una carpeta nueva.`,
-                `  - "contenido": string con el código completo, ejecutable y final del archivo.`,
-                `REGLAS ESTRICTAS:`,
-                `  - Puedes proponer archivos NUEVOS o modificar existentes.`,
-                `  - Usa siempre rutas relativas a la raíz del workspace.`,
-                `  - NO uses bloques markdown (no uses \`\`\`json). Devuelve ÚNICAMENTE el array JSON puro.`,
-                `  - NO agregues texto antes ni después del JSON.`,
-                ``,
-                `=== REPOSITORIO ===`,
-                resumen,
-                `===================`,
-                ``
-            ].join('\n');
-
-            return {
-                promptFinal: `Instrucción: ${promptFinal}`,
-                contexto,
-                modoEditaRepo: true,
-                workspaceYaCargado: true,
-                info: `[Agente autónomo: ${archivos.length} archivos del workspace cargados para aplicar cambios en disco (${kbTotal} KB)]`,
-                skillAplicada
-            };
-        } catch (e) {
-            console.error('[Autónomo] Error cargando repositorio para edición autónoma:', e.message);
         }
     }
 

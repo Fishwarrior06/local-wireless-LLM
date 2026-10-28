@@ -133,6 +133,77 @@ app.whenReady().then(() => {
     createWindow();
 });
 
+/**
+ * Parsea la respuesta del modelo en modo edición múltiple.
+ * Soporta JSON estricto (o dentro de bloques ```json) y fallback robusto
+ * para respuestas formateadas con bloques de código Markdown con rutas asociadas.
+ */
+function parsearCambiosMultiples(texto) {
+    if (!texto) return [];
+
+    let jsonLimpio = texto.trim();
+    if (jsonLimpio.startsWith('```json')) {
+        jsonLimpio = jsonLimpio.replace(/^```json\s*/i, '').replace(/\s*```$/, '');
+    } else if (jsonLimpio.startsWith('```')) {
+        jsonLimpio = jsonLimpio.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    }
+
+    try {
+        const parsed = JSON.parse(jsonLimpio);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+        }
+    } catch {}
+
+    // Fallback: Si el modelo devolvió bloques markdown en vez de JSON
+    const archivos = [];
+    const regexBloque = /```([a-zA-Z0-9_\-]*)\r?\n([\s\S]*?)\r?\n```/g;
+    let m;
+    let ultimoIndex = 0;
+
+    while ((m = regexBloque.exec(texto)) !== null) {
+        const lang = m[1].toLowerCase();
+        const contenido = m[2];
+        const bloqueIndex = m.index;
+
+        if (['bash', 'sh', 'shell', 'tree', 'text'].includes(lang) && (contenido.includes('├──') || contenido.includes('└──'))) {
+            ultimoIndex = bloqueIndex + m[0].length;
+            continue;
+        }
+
+        let rutaEncontrada = null;
+        // Método A: Comentario en primera línea del código
+        const primeraLinea = contenido.split('\n')[0].trim();
+        const mA = primeraLinea.match(/^(?:\/\/\s*|#\s*|\/\*\s*|<!--\s*)([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)/);
+        if (mA) {
+            rutaEncontrada = mA[1];
+        }
+
+        // Método B: Encabezado inmediatamente anterior en el texto markdown
+        if (!rutaEncontrada) {
+            const textoPrevio = texto.slice(ultimoIndex, bloqueIndex);
+            const lineasPrevias = textoPrevio.split('\n').map(l => l.trim()).filter(Boolean).reverse();
+            for (const linea of lineasPrevias) {
+                const mB = linea.match(/([a-zA-Z0-9_\-\.\/]+\.(?:js|ts|jsx|tsx|json|md|html|css|py|java|c|cpp|h|rs|go|sh|yaml|yml|toml|sql))/i);
+                if (mB) {
+                    rutaEncontrada = mB[1];
+                    break;
+                }
+            }
+        }
+
+        if (rutaEncontrada) {
+            archivos.push({
+                ruta: rutaEncontrada.replace(/^[\\/]+/, '').trim(),
+                contenido: contenido.trim()
+            });
+        }
+        ultimoIndex = bloqueIndex + m[0].length;
+    }
+
+    return archivos;
+}
+
 // Detener generación activa
 ipcMain.on('detener-generacion', () => {
     if (abortController) {
@@ -341,15 +412,11 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
         // Si fue edición de repositorio (múltiples archivos)
         if (parsed.modoEditaRepo) {
             try {
-                // Limpiar posibles bloques markdown envolventes si el modelo los incluyó
-                let jsonLimpio = respuestaFinal.trim();
-                if (jsonLimpio.startsWith('```json')) {
-                    jsonLimpio = jsonLimpio.replace(/^```json\s*/i, '').replace(/\s*```$/, '');
-                } else if (jsonLimpio.startsWith('```')) {
-                    jsonLimpio = jsonLimpio.replace(/^```\s*/, '').replace(/\s*```$/, '');
+                const cambios = parsearCambiosMultiples(respuestaFinal);
+                if (!cambios || cambios.length === 0) {
+                    throw new Error('No se detectaron bloques de código ni JSON estructurado para escribir');
                 }
 
-                const cambios = JSON.parse(jsonLimpio);
                 let count = 0;
                 for (const { ruta, contenido } of cambios) {
                     const rutaAbsoluta = path.join(carpeta || config.projectRoot, ruta);
@@ -363,7 +430,7 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
                 }
                 event.sender.send('stream-ia', `\n\n🎯 [edita-repo completado: ${count} archivo(s) modificado(s)/creado(s)]`);
             } catch (err) {
-                event.sender.send('stream-ia', `\n\n❌ [Error parseando JSON del modelo: ${err.message}]\nRespuesta cruda:\n${respuestaFinal.slice(0, 500)}`);
+                event.sender.send('stream-ia', `\n\n❌ [Error parseando cambios del modelo: ${err.message}]\nRespuesta cruda:\n${respuestaFinal.slice(0, 500)}`);
             }
         }
     } catch (err) {
