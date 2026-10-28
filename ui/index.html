@@ -191,7 +191,9 @@
       workspacePathPlaceholder: 'Ninguna carpeta seleccionada...',
       btnBrowse: 'Examinar...',
       btnWithoutWorkspace: 'Sin Workspace',
-      btnCreateWithWorkspace: 'Iniciar Conversación'
+      btnCreateWithWorkspace: 'Iniciar Conversación',
+      generating: 'Generando...',
+      generated: 'Generado -'
     },
     en: {
       conversationsTitle: 'CONVERSATIONS',
@@ -223,7 +225,9 @@
       workspacePathPlaceholder: 'No folder selected...',
       btnBrowse: 'Browse...',
       btnWithoutWorkspace: 'Without Workspace',
-      btnCreateWithWorkspace: 'Start Conversation'
+      btnCreateWithWorkspace: 'Start Conversation',
+      generating: 'Generating...',
+      generated: 'Generated -'
     }
   };
 
@@ -239,6 +243,19 @@
     if (typeof inputWorkspacePath !== 'undefined' && inputWorkspacePath) {
       inputWorkspacePath.placeholder = t.workspacePathPlaceholder;
     }
+
+    // Actualizar barras de estado de IA existentes en pantalla
+    document.querySelectorAll('.ia-status-bar').forEach(bar => {
+      const textEl = bar.querySelector('.ia-status-text');
+      if (!textEl) return;
+      const match = textEl.textContent.match(/(\d+\.?\d*s)/);
+      const segs = match ? match[1] : '';
+      if (bar.classList.contains('finished')) {
+        textEl.textContent = `${t.generated} ${segs}`.trim();
+      } else {
+        textEl.textContent = `${t.generating} ${segs}`.trim();
+      }
+    });
 
     // Actualizar botones del selector de idioma
     btnLangEs.classList.toggle('activo', idiomaActual === 'es');
@@ -743,8 +760,8 @@
     actualizarWorkspaceBar();
     chat.innerHTML = '';
     const sesionActual = sesiones.find(s => s.id === sesionActivaId);
-    sesionActual.mensajes.forEach(msg => crearBurbujaDOM(msg.rol, msg.texto));
-    scrollAbajo();
+    sesionActual.mensajes.forEach(msg => crearBurbujaDOM(msg.rol, msg.texto, msg.tiempo));
+    scrollAbajo(true);
   }
 
   // Control del Modal de Nueva Conversación / Workspace
@@ -913,7 +930,81 @@
   // Alias used by the improved markdown formatter
   window.copiarCodigo = window.copiarAlPortapapeles;
 
-  function crearBurbujaDOM(clase, texto) {
+  // =========================================================================
+  // Control de Cronómetro de Generación ("Generando... 4s" / "Generado - 12s")
+  // =========================================================================
+  let timerGeneracionInterval = null;
+  let tiempoInicioGeneracion = 0;
+  let currentStatusBar = null;
+
+  function iniciarGeneracionTimer(statusBarEl) {
+    detenerGeneracionTimer();
+    tiempoInicioGeneracion = Date.now();
+    currentStatusBar = statusBarEl;
+
+    const actualizar = () => {
+      if (!currentStatusBar) return;
+      const t = I18N[idiomaActual];
+      const segs = Math.floor((Date.now() - tiempoInicioGeneracion) / 1000);
+      const textEl = currentStatusBar.querySelector('.ia-status-text');
+      if (textEl) {
+        textEl.textContent = `${t.generating} ${segs}s`;
+      }
+    };
+
+    actualizar();
+    timerGeneracionInterval = setInterval(actualizar, 1000);
+  }
+
+  function finalizarGeneracionTimer() {
+    if (timerGeneracionInterval) {
+      clearInterval(timerGeneracionInterval);
+      timerGeneracionInterval = null;
+    }
+    if (currentStatusBar) {
+      const segs = Math.max(1, Math.round((Date.now() - tiempoInicioGeneracion) / 1000));
+      const t = I18N[idiomaActual];
+      currentStatusBar.classList.add('finished');
+      const dot = currentStatusBar.querySelector('.ia-status-dot');
+      if (dot) dot.classList.remove('pulse');
+      const textEl = currentStatusBar.querySelector('.ia-status-text');
+      if (textEl) {
+        textEl.textContent = `${t.generated} ${segs}s`;
+      }
+
+      // Guardar tiempo transcurrido en el último mensaje de la sesión
+      const sesionActual = sesiones.find(s => s.id === sesionActivaId);
+      if (sesionActual && sesionActual.mensajes.length > 0) {
+        const ult = sesionActual.mensajes[sesionActual.mensajes.length - 1];
+        if (ult && ult.rol === 'ia') {
+          ult.tiempo = `${segs}s`;
+        }
+      }
+      currentStatusBar = null;
+    }
+  }
+
+  function detenerGeneracionTimer() {
+    if (timerGeneracionInterval) {
+      clearInterval(timerGeneracionInterval);
+      timerGeneracionInterval = null;
+    }
+    currentStatusBar = null;
+  }
+
+  // =========================================================================
+  // Detección de Avisos Preparatorios del Backend
+  // (Mantiene el esqueleto visible mientras Ollama piensa la respuesta)
+  // =========================================================================
+  function esTextoSoloPreparatorio(texto) {
+    if (!texto || !texto.trim()) return true;
+    const sinAvisos = texto
+      .replace(/⚡?\s*\[[^\]]+\]/g, '')
+      .trim();
+    return sinAvisos.length === 0;
+  }
+
+  function crearBurbujaDOM(clase, texto, tiempo = null, esStreaming = false) {
     const div = document.createElement('div');
     div.className = `mensaje ${clase}`;
 
@@ -927,11 +1018,55 @@
         }
       });
     } else {
-      div.innerHTML = formatearMarkdownSimple(texto);
+      const t = I18N[idiomaActual];
+
+      if (esStreaming) {
+        // Barra de estado de generación activa
+        const statusBar = document.createElement('div');
+        statusBar.className = 'ia-status-bar';
+        statusBar.innerHTML = `
+          <span class="ia-status-dot pulse"></span>
+          <span class="ia-status-text">${t.generating} 0s</span>
+        `;
+        div.appendChild(statusBar);
+        iniciarGeneracionTimer(statusBar);
+
+        // Contenedor de contenido generado
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'ia-content';
+        contentDiv.innerHTML = formatearMarkdownSimple(texto);
+        div.appendChild(contentDiv);
+
+        // Esqueleto visible mientras la IA piensa
+        const skeleton = document.createElement('div');
+        skeleton.className = 'skeleton-loader';
+        skeleton.innerHTML = `
+          <div class="skeleton-line" style="width: 85%"></div>
+          <div class="skeleton-line" style="width: 65%"></div>
+          <div class="skeleton-line" style="width: 78%"></div>
+        `;
+        div.appendChild(skeleton);
+      } else {
+        // Mensaje histórico restaurado o aviso
+        if (tiempo) {
+          const statusBar = document.createElement('div');
+          statusBar.className = 'ia-status-bar finished';
+          statusBar.innerHTML = `
+            <span class="ia-status-dot"></span>
+            <span class="ia-status-text">${t.generated} ${tiempo}</span>
+          `;
+          div.appendChild(statusBar);
+        }
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'ia-content';
+        contentDiv.innerHTML = formatearMarkdownSimple(texto);
+        div.appendChild(contentDiv);
+      }
     }
     
     chat.appendChild(div);
-    scrollAbajo();
+    scrollAbajo(esStreaming ? true : false);
     return div;
   }
 
@@ -941,8 +1076,31 @@
     crearBurbujaDOM('ia', aviso);
   }
 
-  function scrollAbajo() {
-    chatWrapper.scrollTop = chatWrapper.scrollHeight;
+  // =========================================================================
+  // Control de Scroll Inteligente (No arrastra hacia abajo si el usuario subió)
+  // =========================================================================
+  let usuarioHizoScrollArriba = false;
+
+  function verificarPosicionScroll() {
+    const distanciaFondo = chatWrapper.scrollHeight - chatWrapper.scrollTop - chatWrapper.clientHeight;
+    if (distanciaFondo > 60) {
+      usuarioHizoScrollArriba = true;
+    } else if (distanciaFondo <= 20) {
+      usuarioHizoScrollArriba = false;
+    }
+  }
+
+  chatWrapper.addEventListener('scroll', verificarPosicionScroll, { passive: true });
+  chatWrapper.addEventListener('wheel', (e) => {
+    if (e.deltaY < 0) {
+      usuarioHizoScrollArriba = true;
+    }
+  }, { passive: true });
+
+  function scrollAbajo(forzar = false) {
+    if (forzar || !usuarioHizoScrollArriba) {
+      chatWrapper.scrollTop = chatWrapper.scrollHeight;
+    }
   }
 
   // =========================================================================
@@ -992,19 +1150,17 @@
       .filter(m => m.texto && m.texto.trim() !== '')
       .slice(-30); // Limitar a los últimos 30 mensajes para no saturar el contexto
 
+    usuarioHizoScrollArriba = false;
     sesionActual.mensajes.push({ rol: 'yo', texto: texto });
     crearBurbujaDOM('yo', texto);
     
     sesionActual.mensajes.push({ rol: 'ia', texto: '' });
-    currentIaMessage = crearBurbujaDOM('ia', '');
+    currentIaMessage = crearBurbujaDOM('ia', '', null, true);
     
     // Resetear estado del stream
     streamBuffer = '';
     streamTextoAcumulado = '';
     if (streamRafId) { cancelAnimationFrame(streamRafId); streamRafId = null; }
-
-    // Mostrar skeleton mientras la IA piensa
-    mostrarSkeleton();
 
     window.api.enviarMensaje(texto.trim(), historialParaIA, sesionActual.carpeta || null);
     
@@ -1032,17 +1188,14 @@
 
   function mostrarSkeleton() {
     if (!currentIaMessage) return;
-    currentIaMessage.innerHTML = `
-      <div class="skeleton-loader">
-        <div class="skeleton-line" style="width: 85%"></div>
-        <div class="skeleton-line" style="width: 65%"></div>
-        <div class="skeleton-line" style="width: 78%"></div>
-      </div>`;
+    const sk = currentIaMessage.querySelector('.skeleton-loader');
+    if (sk) sk.style.display = 'flex';
   }
 
   function ocultarSkeleton() {
-    const sk = currentIaMessage?.querySelector('.skeleton-loader');
-    if (sk) sk.remove();
+    if (!currentIaMessage) return;
+    const sk = currentIaMessage.querySelector('.skeleton-loader');
+    if (sk) sk.style.display = 'none';
   }
 
   function renderStream() {
@@ -1057,10 +1210,22 @@
     streamBuffer = '';
     ultimoMsg.texto = streamTextoAcumulado;
 
-    // Ocultar skeleton en primer render
-    ocultarSkeleton();
-    currentIaMessage.innerHTML = formatearMarkdownSimple(streamTextoAcumulado);
-    scrollAbajo();
+    const contentDiv = currentIaMessage.querySelector('.ia-content');
+    if (contentDiv) {
+      contentDiv.innerHTML = formatearMarkdownSimple(streamTextoAcumulado);
+    } else {
+      currentIaMessage.innerHTML = formatearMarkdownSimple(streamTextoAcumulado);
+    }
+
+    // El skeleton se mantiene visible si el texto acumulado solo contiene
+    // avisos preparatorios del backend. Se oculta cuando la IA emite respuesta real.
+    if (esTextoSoloPreparatorio(streamTextoAcumulado)) {
+      mostrarSkeleton();
+    } else {
+      ocultarSkeleton();
+    }
+
+    scrollAbajo(false);
   }
 
   window.api.onStream((chunk) => {
@@ -1088,6 +1253,9 @@
     streamBuffer = '';
     streamTextoAcumulado = '';
 
+    ocultarSkeleton();
+    finalizarGeneracionTimer();
+
     estaGenerando = false;
     btnStop.style.display = 'none';
     guardarSesiones();
@@ -1095,6 +1263,8 @@
 
   btnStop.addEventListener('click', () => {
     window.api.detenerGeneracion();
+    ocultarSkeleton();
+    finalizarGeneracionTimer();
     estaGenerando = false;
     btnStop.style.display = 'none';
   });
@@ -1148,9 +1318,9 @@
   const sesionRestaurada = sesiones.find(s => s.id === sesionActivaId);
   if (sesionRestaurada && sesionRestaurada.mensajes.length > 0) {
     sesionRestaurada.mensajes.forEach(msg => {
-      if (msg.texto && msg.texto.trim() !== '') crearBurbujaDOM(msg.rol, msg.texto);
+      if (msg.texto && msg.texto.trim() !== '') crearBurbujaDOM(msg.rol, msg.texto, msg.tiempo);
     });
-    scrollAbajo();
+    scrollAbajo(true);
   }
   inicializarModelos();
   inicializarSkills();

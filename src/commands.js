@@ -105,7 +105,12 @@ function extraerIntencionCrearCarpeta(texto) {
 function detectarIntencionEdicionAutonoma(texto) {
     if (!texto) return false;
     const regexAccion = /\b(?:crea|crear|genera|generar|agrega|agregar|añade|añadir|haz|hacer|escribe|escribir|modifica|modificar|edita|editar|actualiza|actualizar|corrige|corregir|implementa|implementar|create|creating|make|making|add|adding|write|writing|generate|generating|modify|modifying|edit|editing|update|updating|change|changing|fix|fixing|refactor|refactoring|implement|implementing)\b/i;
-    const regexObjetivo = /\b(?:archivo|archivos|fichero|ficheros|carpeta|carpetas|folder|folders|directorio|directorios|directory|directories|test|tests|testing|prueba|pruebas|unit\s*tests?|código|codigo|code|función|funcion|function|functions|método|metodo|method|methods|clase|class|classes|módulo|modulo|module|modules|component|components|componente|componentes|endpoint|endpoints|file|files|\.(?:js|ts|jsx|tsx|html|css|json|py|md|sh))\b/i;
+    // Nota: "carpeta/folder/directorio" están EXCLUIDOS intencionalmente.
+    // Si estuvieran, "crea la carpeta X" dispararía modoEditaRepo en lugar de crearCarpetaDirecta.
+    // Cuando el usuario pide carpeta + archivos/tests, palabras como "test/code/archivo"
+    // activan tieneIntencionEdicion igualmente — y modoEditaRepo crea las carpetas intermedias
+    // automáticamente con mkdirSync({ recursive: true }) al escribir cada archivo.
+    const regexObjetivo = /\b(?:archivo|archivos|fichero|ficheros|test|tests|testing|prueba|pruebas|unit\s*tests?|código|codigo|code|función|funcion|function|functions|método|metodo|method|methods|clase|class|classes|módulo|modulo|module|modules|component|components|componente|componentes|endpoint|endpoints|file|files|\.(?:js|ts|jsx|tsx|html|css|json|py|md|sh))\b/i;
     return regexAccion.test(texto) && regexObjetivo.test(texto);
 }
 
@@ -153,13 +158,20 @@ export function procesarInputUsuario(input, workspacePath = null) {
     const rutaRaizEfectiva = workspacePath || config.projectRoot;
 
     // ── Detección autónoma de creación/edición en lenguaje natural ─────────────
+    // Si la sesión tiene un Workspace asignado y el usuario expresa la intención
+    // de crear, modificar, generar tests o archivos (ej. "lee AGENTS.md y crea tests..."):
+    const tieneIntencionEdicion = workspacePath && (
+        detectarIntencionEdicionAutonoma(promptFinal) ||
+        (matchLectura && detectarIntencionEdicionAutonoma(matchLectura[3] || ''))
+    );
 
-    // 1. Prioridad máxima: creación de carpeta pura en lenguaje natural.
-    // Se evalúa ANTES que detectarIntencionEdicionAutonoma porque palabras como
-    // "crea" y "carpeta" también disparan esa función, causando que el modo
-    // modoEditaRepo intercepte el request y falle al no recibir JSON del LLM.
+    // 1. Si es solo creación de carpeta pura (y NO pide crear archivos/código al mismo tiempo):
+    // tieneIntencionEdicion NO se activa por la palabra "carpeta" (ver detectarIntencionEdicionAutonoma),
+    // por lo que este fast-path solo ejecuta cuando el LLM no tiene que generar contenido de archivos.
+    // Cuando hay intención de edición real (tests, código, archivos), modoEditaRepo se encarga
+    // de crear las carpetas intermedias vía mkdirSync({ recursive: true }) en main.js.
     const carpetaSolicitada = extraerIntencionCrearCarpeta(promptFinal);
-    if (carpetaSolicitada && workspacePath) {
+    if (carpetaSolicitada && workspacePath && !tieneIntencionEdicion) {
         return {
             promptFinal,
             contexto,
@@ -168,13 +180,6 @@ export function procesarInputUsuario(input, workspacePath = null) {
             skillAplicada
         };
     }
-
-    // Si la sesión tiene un Workspace asignado y el usuario expresa la intención
-    // de crear, modificar, generar tests o archivos (ej. "lee AGENTS.md y crea tests..."):
-    const tieneIntencionEdicion = workspacePath && (
-        detectarIntencionEdicionAutonoma(promptFinal) ||
-        (matchLectura && detectarIntencionEdicionAutonoma(matchLectura[3] || ''))
-    );
 
     // 2. Si hay intención autónoma de crear o editar archivos/tests/código:
     if (tieneIntencionEdicion) {
