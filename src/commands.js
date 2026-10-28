@@ -49,10 +49,10 @@ function resolverArchivoEnWorkspace(rutaRaiz, rutaParam) {
 
 /**
  * Detecta si el texto del usuario en lenguaje natural solicita crear una carpeta/directorio.
- * Soporta español e inglés.
+ * Soporta español e inglés, singular, plural y variaciones comunes (carpet, carpets, carpetas, folders, etc.).
  * Ej:
  *  - "Crea una carpeta llamada \"test\" dentro de la carpeta \"src\""
- *  - "crea una carpeta llamada /test adentro de /src. solo haz eso"
+ *  - "crea la carpets test dentro de la carpeta src del repositorio"
  *  - "create a folder named test inside of src"
  *  - "make folder src/test"
  * Retorna la ruta relativa normalizada (ej: "src/test") o null.
@@ -60,11 +60,14 @@ function resolverArchivoEnWorkspace(rutaRaiz, rutaParam) {
 function extraerIntencionCrearCarpeta(texto) {
     if (!texto) return null;
 
-    // Normalizar comillas para no interferir en la separación de tokens
-    const limpio = texto.replace(/["'`]/g, ' ');
+    // Normalizar comillas y limpiar sufijos comunes como "del repositorio", "en el repo", etc.
+    const limpio = texto.replace(/["'`]/g, ' ')
+                        .replace(/\b(?:del|en\s+el|de\s+este|in\s+the|from\s+the)\s+(?:repositorio|repo|workspace|proyecto|project)\b/gi, ' ');
+
+    const regexDir = '(?:carpeta|carpetas|carpets?|directorio|directorios|folder|folders|directory|directories|dir)';
 
     // Caso 1: ... carpeta [llamada/named] X (adentro de|dentro de|inside of|inside|in|en) [la carpeta] Y
-    const m1 = limpio.match(/\b(?:carpeta|directorio|folder|directory|dir)\s+(?:llamad[ao]|called|named)?\s*([^\s]+)\s+(?:adentro\s+de|dentro\s+de|inside\s+of|inside|in|en)\s+(?:la\s+carpeta\s+|el\s+directorio\s+|the\s+folder\s+|the\s+directory\s+|carpeta\s+|folder\s+|dir\s+)?([^\s\.,;!]+)/i);
+    const m1 = limpio.match(new RegExp(`\\b${regexDir}\\s+(?:llamad[ao]|called|named)?\\s*([^\\s]+)\\s+(?:adentro\\s+de|dentro\\s+de|inside\\s+of|inside|in|en)\\s+(?:la\\s+carpeta\\s+|el\\s+directorio\\s+|the\\s+folder\\s+|the\\s+directory\\s+|${regexDir}\\s+)?([^\\s\\.,;!]+)`, 'i'));
     if (m1) {
         const sub = m1[1].replace(/^[\\/]+|[\\/]+$/g, '');
         const padre = m1[2].replace(/^[\\/]+|[\\/]+$/g, '');
@@ -75,7 +78,7 @@ function extraerIntencionCrearCarpeta(texto) {
     }
 
     // Caso 2: (adentro de|dentro de|inside of|inside|in|en) [la carpeta] Y ... crea [la carpeta] X
-    const m2 = limpio.match(/(?:adentro\s+de|dentro\s+de|inside\s+of|inside|in|en)\s+(?:la\s+carpeta\s+|el\s+directorio\s+|the\s+folder\s+|the\s+directory\s+|carpeta\s+|folder\s+|dir\s+)?([^\s\.,;!]+)[\s,]+(?:crea|crear|haz|hacer|create|make|mkdir)\s+(?:una\s+|la\s+|a\s+|the\s+)?(?:carpeta|directorio|folder|directory|dir)\s+(?:llamad[ao]|called|named)?\s*([^\s\.,;!]+)/i);
+    const m2 = limpio.match(new RegExp(`(?:adentro\\s+de|dentro\\s+de|inside\\s+of|inside|in|en)\\s+(?:la\\s+carpeta\\s+|el\\s+directorio\\s+|the\\s+folder\\s+|the\\s+directory\\s+|${regexDir}\\s+)?([^\\s\\.,;!]+)[\\s,]+(?:crea|crear|haz|hacer|create|make|mkdir)\\s+(?:una\\s+|la\\s+|a\\s+|the\\s+)?${regexDir}\\s+(?:llamad[ao]|called|named)?\\s*([^\\s\\.,;!]+)`, 'i'));
     if (m2) {
         const padre = m2[1].replace(/^[\\/]+|[\\/]+$/g, '');
         const sub = m2[2].replace(/^[\\/]+|[\\/]+$/g, '');
@@ -86,7 +89,7 @@ function extraerIntencionCrearCarpeta(texto) {
     }
 
     // Caso 3: crea/create [la|a] carpeta [llamada] <ruta>
-    const m3 = limpio.match(/\b(?:crea|crear|haz|hacer|create|make|mkdir|new)\s+(?:una\s+|la\s+|a\s+|the\s+)?(?:carpeta|directorio|folder|directory|dir)\s+(?:llamad[ao]|called|named)?\s*([a-zA-Z0-9_\-\.\/]+)/i);
+    const m3 = limpio.match(new RegExp(`\\b(?:crea|crear|haz|hacer|create|make|mkdir|new)\\s+(?:una\\s+|la\\s+|a\\s+|the\\s+)?${regexDir}\\s+(?:llamad[ao]|called|named)?\\s*([a-zA-Z0-9_\\-\\.\\/]+)`, 'i'));
     if (m3) {
         const candidata = m3[1].replace(/^[\\/]+|[\\/]+$/g, '');
         const stopWords = ['una', 'la', 'el', 'un', 'nuevo', 'nueva', 'a', 'the', 'new'];
@@ -158,19 +161,27 @@ export function procesarInputUsuario(input, workspacePath = null) {
     const rutaRaizEfectiva = workspacePath || config.projectRoot;
 
     // ── Detección autónoma de creación/edición en lenguaje natural ─────────────
-    // Si la sesión tiene un Workspace asignado y el usuario expresa la intención
-    // de crear, modificar, generar tests o archivos (ej. "lee AGENTS.md y crea tests..."):
-    const tieneIntencionEdicion = workspacePath && (
-        detectarIntencionEdicionAutonoma(promptFinal) ||
-        (matchLectura && detectarIntencionEdicionAutonoma(matchLectura[3] || ''))
-    );
-
-    // 1. Si es solo creación de carpeta pura (y NO pide crear archivos/código al mismo tiempo):
-    // tieneIntencionEdicion NO se activa por la palabra "carpeta" (ver detectarIntencionEdicionAutonoma),
-    // por lo que este fast-path solo ejecuta cuando el LLM no tiene que generar contenido de archivos.
-    // Cuando hay intención de edición real (tests, código, archivos), modoEditaRepo se encarga
-    // de crear las carpetas intermedias vía mkdirSync({ recursive: true }) en main.js.
     const carpetaSolicitada = extraerIntencionCrearCarpeta(promptFinal);
+
+    // Si se solicitó una carpeta, verificar si el texto restante pide generar código/archivos
+    let tieneIntencionEdicion = false;
+    if (workspacePath) {
+        if (carpetaSolicitada) {
+            // El usuario pidió crear una carpeta. Solo activamos modoEditaRepo si
+            // el prompt pide explícitamente generar o escribir archivos/código/tests reales
+            // (ej: "crea carpeta src/test donde irán los unit tests para verificar...").
+            // Si el prompt solo es "crea la carpeta test dentro de src del repositorio",
+            // la palabra "test" es el nombre de la carpeta, no un pedido de código.
+            const regexPideCodigoReal = /\b(?:unit\s*tests?|pruebas?\s+unitarias?|archivos?|ficheros?|files?|código|codigo|code|escribe|escribir|genera|generar|implementa|implementar|donde\s+ir[aá]n|para\s+verificar|verifiquemos|nesecitemos|necesitemos|tests?\s+que)\b/i;
+            tieneIntencionEdicion = regexPideCodigoReal.test(promptFinal);
+        } else {
+            tieneIntencionEdicion = detectarIntencionEdicionAutonoma(promptFinal) ||
+                (matchLectura && detectarIntencionEdicionAutonoma(matchLectura[3] || ''));
+        }
+    }
+
+    // 1. Si es creación de carpeta pura:
+    // Se ejecuta de inmediato en disco (1ms) sin quemar tokens del LLM ni fallar en parseos
     if (carpetaSolicitada && workspacePath && !tieneIntencionEdicion) {
         return {
             promptFinal,

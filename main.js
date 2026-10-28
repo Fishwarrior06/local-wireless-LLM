@@ -137,6 +137,7 @@ app.whenReady().then(() => {
  * Parsea la respuesta del modelo en modo edición múltiple.
  * Soporta JSON estricto (o dentro de bloques ```json) y fallback robusto
  * para respuestas formateadas con bloques de código Markdown con rutas asociadas.
+ * Normaliza las propiedades para tolerar { ruta, contenido }, { file, type }, { path, content }, etc.
  */
 function parsearCambiosMultiples(texto) {
     if (!texto) return [];
@@ -148,10 +149,26 @@ function parsearCambiosMultiples(texto) {
         jsonLimpio = jsonLimpio.replace(/^```\s*/, '').replace(/\s*```$/, '');
     }
 
+    // Tolerar texto antes o después del array JSON: extraer el bloque entre [ y ]
+    const primerCorchete = jsonLimpio.indexOf('[');
+    const ultimoCorchete = jsonLimpio.lastIndexOf(']');
+    if (primerCorchete !== -1 && ultimoCorchete > primerCorchete) {
+        jsonLimpio = jsonLimpio.slice(primerCorchete, ultimoCorchete + 1);
+    }
+
     try {
         const parsed = JSON.parse(jsonLimpio);
         if (Array.isArray(parsed) && parsed.length > 0) {
-            return parsed;
+            return parsed.map(item => {
+                const rutaRaw = (item.ruta || item.path || item.file || item.filepath || item.filename || item.name || '').trim();
+                const esDirectorio = item.type === 'directory' || item.tipo === 'directorio' || item.type === 'folder' || item.tipo === 'carpeta';
+                const contenido = item.contenido !== undefined ? item.contenido : (item.content !== undefined ? item.content : (item.code !== undefined ? item.code : ''));
+                return {
+                    ruta: rutaRaw.replace(/^[\\/]+/, ''),
+                    contenido: typeof contenido === 'string' ? contenido : (contenido ? JSON.stringify(contenido, null, 2) : ''),
+                    esDirectorio
+                };
+            }).filter(item => item.ruta.length > 0);
         }
     } catch {}
 
@@ -423,17 +440,30 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
                 }
 
                 let count = 0;
-                for (const { ruta, contenido } of cambios) {
+                for (const { ruta, contenido, esDirectorio } of cambios) {
+                    if (!ruta) continue;
                     const rutaAbsoluta = path.join(carpeta || config.projectRoot, ruta);
+
+                    if (esDirectorio) {
+                        if (!fs.existsSync(rutaAbsoluta)) {
+                            fs.mkdirSync(rutaAbsoluta, { recursive: true });
+                            const gitkeep = path.join(rutaAbsoluta, '.gitkeep');
+                            if (!fs.existsSync(gitkeep)) fs.writeFileSync(gitkeep, '', 'utf-8');
+                        }
+                        event.sender.send('stream-ia', `\n📁 [Directorio creado: ${ruta}]`);
+                        count++;
+                        continue;
+                    }
+
                     const dir = path.dirname(rutaAbsoluta);
                     if (!fs.existsSync(dir)) {
                         fs.mkdirSync(dir, { recursive: true });
                     }
-                    fs.writeFileSync(rutaAbsoluta, contenido.trim(), 'utf-8');
+                    fs.writeFileSync(rutaAbsoluta, (contenido || '').trim(), 'utf-8');
                     event.sender.send('stream-ia', `\n✅ [Guardado: ${ruta}]`);
                     count++;
                 }
-                event.sender.send('stream-ia', `\n\n🎯 [edita-repo completado: ${count} archivo(s) modificado(s)/creado(s)]`);
+                event.sender.send('stream-ia', `\n\n🎯 [edita-repo completado: ${count} cambio(s) aplicado(s) en disco]`);
             } catch (err) {
                 event.sender.send('stream-ia', `\n\n❌ [Error parseando cambios del modelo: ${err.message}]\nRespuesta cruda:\n${respuestaFinal.slice(0, 500)}`);
             }
