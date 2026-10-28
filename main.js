@@ -241,6 +241,8 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
 
     if (parsed.modoEdicion) {
         event.sender.send('stream-ia', `[Modificando ${parsed.archivoDestino}...]\n\n`);
+    } else if (parsed.modoCreacion) {
+        event.sender.send('stream-ia', `[Creando ${parsed.archivoDestino}...]\n\n`);
     } else if (parsed.modoEditaRepo) {
         event.sender.send('stream-ia', `[Analizando repositorio para edición múltiple...]\n\n`);
     }
@@ -258,7 +260,7 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
     //   - Si commands.js ya cargó un archivo/repo explícito (workspaceYaCargado, /lee, etc.):
     //     solo mapa estructural para complementar sin duplicar.
     let systemPrompt = '';
-    if (carpeta && !parsed.modoEdicion && !parsed.modoEditaRepo) {
+    if (carpeta && !parsed.modoEdicion && !parsed.modoCreacion && !parsed.modoEditaRepo) {
         try {
             const { archivos, totalBytes, limitAlcanzado } = leerCarpetaRecursiva(carpeta);
             if (archivos.length > 0) {
@@ -295,32 +297,49 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
             // Workspace e instrucciones de sistema como rol 'system' (fuera del historial visible)
             systemPrompt,
             // Pasar historial de la sesión para que el modelo recuerde el contexto previo.
-            // En modos de edición/skill usamos historial vacío para no contaminar el contexto.
-            historial: (parsed.modoEdicion || parsed.modoEditaRepo || parsed.skillAplicada)
+            // En modos de edición/creación/skill usamos historial vacío para no contaminar el contexto.
+            historial: (parsed.modoEdicion || parsed.modoCreacion || parsed.modoEditaRepo || parsed.skillAplicada)
                 ? []
                 : (historial || []),
             signal: abortController.signal,
             onChunk: (chunk) => event.sender.send('stream-ia', chunk)
         });
 
-        // Si fue edición individual
-        if (parsed.modoEdicion && parsed.archivoDestino) {
+        // Si fue edición o creación individual
+        if ((parsed.modoEdicion || parsed.modoCreacion) && parsed.archivoDestino) {
+            const dir = path.dirname(parsed.archivoDestino);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
             fs.writeFileSync(parsed.archivoDestino, respuestaFinal.trim(), 'utf-8');
-            event.sender.send('stream-ia', `\n\n✅ [Guardado en ${parsed.archivoDestino}]`);
+            const verbo = parsed.modoCreacion ? 'Creado' : 'Guardado';
+            event.sender.send('stream-ia', `\n\n✅ [${verbo} en ${parsed.archivoDestino}]`);
         }
 
         // Si fue edición de repositorio (múltiples archivos)
         if (parsed.modoEditaRepo) {
             try {
-                const cambios = JSON.parse(respuestaFinal.trim());
+                // Limpiar posibles bloques markdown envolventes si el modelo los incluyó
+                let jsonLimpio = respuestaFinal.trim();
+                if (jsonLimpio.startsWith('```json')) {
+                    jsonLimpio = jsonLimpio.replace(/^```json\s*/i, '').replace(/\s*```$/, '');
+                } else if (jsonLimpio.startsWith('```')) {
+                    jsonLimpio = jsonLimpio.replace(/^```\s*/, '').replace(/\s*```$/, '');
+                }
+
+                const cambios = JSON.parse(jsonLimpio);
                 let count = 0;
                 for (const { ruta, contenido } of cambios) {
                     const rutaAbsoluta = path.join(carpeta || config.projectRoot, ruta);
+                    const dir = path.dirname(rutaAbsoluta);
+                    if (!fs.existsSync(dir)) {
+                        fs.mkdirSync(dir, { recursive: true });
+                    }
                     fs.writeFileSync(rutaAbsoluta, contenido.trim(), 'utf-8');
                     event.sender.send('stream-ia', `\n✅ [Guardado: ${ruta}]`);
                     count++;
                 }
-                event.sender.send('stream-ia', `\n\n🎯 [edita-repo completado: ${count} archivo(s) modificado(s)]`);
+                event.sender.send('stream-ia', `\n\n🎯 [edita-repo completado: ${count} archivo(s) modificado(s)/creado(s)]`);
             } catch (err) {
                 event.sender.send('stream-ia', `\n\n❌ [Error parseando JSON del modelo: ${err.message}]\nRespuesta cruda:\n${respuestaFinal.slice(0, 500)}`);
             }

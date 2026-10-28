@@ -52,6 +52,7 @@ export function procesarInputUsuario(input, workspacePath = null) {
     let promptFinal = input;
     let modoEdicion = false;
     let modoEditaRepo = false;
+    let modoCreacion = false;
     let archivoDestino = "";
     let skillAplicada = null;
 
@@ -77,12 +78,15 @@ export function procesarInputUsuario(input, workspacePath = null) {
     const regexLectura = /^(?:lee|leer|cat|read|ver|abre|abrir|muestra|mostrar)\s+(?:el\s+archivo\s+|el\s+fichero\s+|archivo\s+|fichero\s+|file\s+)?(?:"([^"]+)"|([^\s\?]+))\s*(.*)/i;
     const regexEdicion = /^(?:edita|editar|modifica|modificar|edit)\s+(?:el\s+archivo\s+|el\s+fichero\s+|archivo\s+|fichero\s+|file\s+)?(?:"([^"]+)"|([^\s\?]+))\s*(.*)/i;
     const regexEditaRepo = /^(?:edita-repo|editar-repo)\s*(.*)/i;
+    // Comando /crea: crea un archivo nuevo (y su carpeta si no existe) con contenido generado por la IA
+    const regexCreacion = /^(?:crea|crear|new|nuevo|genera|generar)\s+(?:el\s+archivo\s+|el\s+fichero\s+|archivo\s+|fichero\s+|file\s+)?(?:"([^"]+)"|([^\s\?]+))\s*(.*)/i;
 
     const matchRepo = promptFinal.match(regexRepo);
     const matchCarpeta = promptFinal.match(regexCarpeta);
     const matchLectura = promptFinal.match(regexLectura);
     const matchEdicion = promptFinal.match(regexEdicion);
     const matchEditaRepo = promptFinal.match(regexEditaRepo);
+    const matchCreacion = promptFinal.match(regexCreacion);
 
     const rutaRaizEfectiva = workspacePath || config.projectRoot;
 
@@ -102,6 +106,36 @@ export function procesarInputUsuario(input, workspacePath = null) {
         } catch (e) {
             return { error: `Error leyendo '${archivoBuscado}' para edición: ${e.message}` };
         }
+    } else if (matchCreacion) {
+        // Modo creación: el archivo puede no existir todavía.
+        // La IA generará su contenido completo y main.js lo escribirá en disco
+        // creando la carpeta padre si es necesario.
+        modoCreacion = true;
+        const rutaParam = (matchCreacion[1] || matchCreacion[2]).trim();
+        const instruccion = matchCreacion[3] || 'Genera el contenido apropiado para este archivo.';
+
+        // Normalizar: si es relativa, unirla a la raíz del workspace
+        const rutaAbsoluta = path.isAbsolute(rutaParam)
+            ? rutaParam
+            : path.join(rutaRaizEfectiva, rutaParam);
+
+        // Si el archivo ya existe, incluir su contenido como contexto para que la IA lo amplíe
+        if (fs.existsSync(rutaAbsoluta) && fs.statSync(rutaAbsoluta).isFile()) {
+            const contenidoExistente = fs.readFileSync(rutaAbsoluta, 'utf-8');
+            contexto += `Contenido actual de ${rutaParam}:\n${contenidoExistente}\n\n`;
+        }
+
+        promptFinal = `Instrucción: ${instruccion}\n\nREGLA ESTRICTA: Devuelve ÚNICAMENTE el código o contenido final del archivo '${rutaParam}'. Sin saludos, explicaciones, prefijos de ruta ni bloques markdown.`;
+        archivoDestino = rutaAbsoluta;
+
+        return {
+            promptFinal,
+            contexto,
+            modoCreacion: true,
+            archivoDestino: rutaAbsoluta,
+            info: `[Creando archivo: ${rutaParam}]`,
+            skillAplicada
+        };
     } else if (matchEditaRepo) {
         modoEditaRepo = true;
         const instruccion = matchEditaRepo[1] || "Optimiza el repositorio.";
@@ -111,7 +145,7 @@ export function procesarInputUsuario(input, workspacePath = null) {
                 return { error: 'No se encontraron archivos compatibles en el repositorio.' };
             }
             const { resumen, kbTotal } = formatearContextoCarpeta(rutaRaizEfectiva, archivos, totalBytes, limitAlcanzado);
-            contexto += `Eres un agente de modificación de código. Se te proporciona el contenido de un repositorio y una instrucción.\nTu tarea es devolver ÚNICAMENTE un array JSON válido con los archivos que necesiten ser modificados.\nCada elemento del array debe tener exactamente dos campos: "ruta" (string con la ruta relativa del archivo) y "contenido" (string con el código completo y final del archivo modificado).\nNo incluyas explicaciones, comentarios, bloques markdown ni texto fuera del JSON.\n\n=== REPOSITORIO ===\n${resumen}===================\n\n`;
+            contexto += `Eres un agente de modificación y creación de código. Se te proporciona el contenido de un repositorio y una instrucción.\nTu tarea es devolver ÚNICAMENTE un array JSON válido con los archivos que necesiten ser modificados o CREADOS.\nCada elemento del array debe tener exactamente dos campos: "ruta" (string con la ruta relativa del archivo, pudiendo ser un archivo nuevo) y "contenido" (string con el código completo y final del archivo).\nPuedes incluir archivos nuevos o crear nuevas rutas si la instrucción lo solicita.\nNo incluyas explicaciones, comentarios, bloques markdown ni texto fuera del JSON.\n\n=== REPOSITORIO ===\n${resumen}===================\n\n`;
             promptFinal = `Instrucción: ${instruccion}`;
             return {
                 promptFinal,
@@ -234,6 +268,7 @@ export function procesarInputUsuario(input, workspacePath = null) {
         contexto,
         modoEdicion,
         modoEditaRepo,
+        modoCreacion,
         archivoDestino,
         skillAplicada
     };

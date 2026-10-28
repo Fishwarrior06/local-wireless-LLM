@@ -324,8 +324,9 @@
     { cmd: '/lee',        args: '<archivo|carpeta>',      desc: 'Inyecta un archivo o carpeta en el contexto', tipo: 'cmd' },
     { cmd: '/lee-repo',   args: '[pregunta]',              desc: 'Carga el árbol de código completo del proyecto', tipo: 'cmd' },
     { cmd: '/lee-carpeta',args: '<directorio>',            desc: 'Analiza recursivamente un directorio local', tipo: 'cmd' },
+    { cmd: '/crea',       args: '<archivo> <instrucción>', desc: 'Crea un archivo nuevo (y sus carpetas) en disco', tipo: 'cmd' },
     { cmd: '/edita',      args: '<archivo> <instrucción>', desc: 'Modifica y sobreescribe un archivo en disco', tipo: 'cmd' },
-    { cmd: '/edita-repo', args: '<instrucción>',           desc: 'Modificación autónoma multi-archivo (JSON)', tipo: 'cmd' },
+    { cmd: '/edita-repo', args: '<instrucción>',           desc: 'Modificación y creación autónoma multi-archivo', tipo: 'cmd' },
   ];
 
   let catalogoComandos = [...COMANDOS_SISTEMA];
