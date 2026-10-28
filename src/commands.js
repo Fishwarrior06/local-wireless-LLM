@@ -51,6 +51,7 @@ function resolverArchivoEnWorkspace(rutaRaiz, rutaParam) {
  * Detecta si el texto del usuario en lenguaje natural solicita crear una carpeta/directorio.
  * Soporta español e inglés.
  * Ej:
+ *  - "Crea una carpeta llamada \"test\" dentro de la carpeta \"src\""
  *  - "crea una carpeta llamada /test adentro de /src. solo haz eso"
  *  - "create a folder named test inside of src"
  *  - "make folder src/test"
@@ -59,29 +60,37 @@ function resolverArchivoEnWorkspace(rutaRaiz, rutaParam) {
 function extraerIntencionCrearCarpeta(texto) {
     if (!texto) return null;
 
-    // Caso 1: "carpeta [llamada/named/called] X adentro/dentro/inside/in Y"
-    const m1 = texto.match(/\b(?:carpeta|directorio|folder|directory|dir)\s+(?:llamad[ao]|called|named)?\s*([^\s]+)\s+(?:adentro|dentro|inside(?:\s+of)?|in)\s+([^\s\.,;!]+)/i);
+    // Normalizar comillas para no interferir en la separación de tokens
+    const limpio = texto.replace(/["'`]/g, ' ');
+
+    // Caso 1: ... carpeta [llamada/named] X (adentro de|dentro de|inside of|inside|in|en) [la carpeta] Y
+    const m1 = limpio.match(/\b(?:carpeta|directorio|folder|directory|dir)\s+(?:llamad[ao]|called|named)?\s*([^\s]+)\s+(?:adentro\s+de|dentro\s+de|inside\s+of|inside|in|en)\s+(?:la\s+carpeta\s+|el\s+directorio\s+|the\s+folder\s+|the\s+directory\s+|carpeta\s+|folder\s+|dir\s+)?([^\s\.,;!]+)/i);
     if (m1) {
-        const sub = m1[1].replace(/^[\/\\\"'`]+|[\/\\\"'`]+$/g, '');
-        const padre = m1[2].replace(/^[\/\\\"'`]+|[\/\\\"'`]+$/g, '');
-        if (sub && padre && !['a', 'the', 'una', 'la'].includes(sub.toLowerCase())) {
+        const sub = m1[1].replace(/^[\\/]+|[\\/]+$/g, '');
+        const padre = m1[2].replace(/^[\\/]+|[\\/]+$/g, '');
+        const stopWords = ['a', 'the', 'una', 'la', 'el', 'de', 'of', 'en', 'in'];
+        if (sub && padre && !stopWords.includes(sub.toLowerCase()) && !stopWords.includes(padre.toLowerCase())) {
             return `${padre}/${sub}`;
         }
     }
 
-    // Caso 2: "(adentro|dentro|inside|in) Y [,] crea [la|una|a] carpeta [llamada] X"
-    const m2 = texto.match(/(?:adentro|dentro|inside(?:\s+of)?|in)\s+([^\s\.,;!]+)[\s,]+(?:crea|crear|haz|hacer|create|make|mkdir)\s+(?:una\s+|la\s+|a\s+|the\s+)?(?:carpeta|directorio|folder|directory|dir)\s+(?:llamad[ao]|called|named)?\s*([^\s\.,;!]+)/i);
+    // Caso 2: (adentro de|dentro de|inside of|inside|in|en) [la carpeta] Y ... crea [la carpeta] X
+    const m2 = limpio.match(/(?:adentro\s+de|dentro\s+de|inside\s+of|inside|in|en)\s+(?:la\s+carpeta\s+|el\s+directorio\s+|the\s+folder\s+|the\s+directory\s+|carpeta\s+|folder\s+|dir\s+)?([^\s\.,;!]+)[\s,]+(?:crea|crear|haz|hacer|create|make|mkdir)\s+(?:una\s+|la\s+|a\s+|the\s+)?(?:carpeta|directorio|folder|directory|dir)\s+(?:llamad[ao]|called|named)?\s*([^\s\.,;!]+)/i);
     if (m2) {
-        const padre = m2[1].replace(/^[\/\\\"'`]+|[\/\\\"'`]+$/g, '');
-        const sub = m2[2].replace(/^[\/\\\"'`]+|[\/\\\"'`]+$/g, '');
-        if (sub && padre) return `${padre}/${sub}`;
+        const padre = m2[1].replace(/^[\\/]+|[\\/]+$/g, '');
+        const sub = m2[2].replace(/^[\\/]+|[\\/]+$/g, '');
+        const stopWords = ['a', 'the', 'una', 'la', 'el', 'de', 'of'];
+        if (sub && padre && !stopWords.includes(padre.toLowerCase()) && !stopWords.includes(sub.toLowerCase())) {
+            return `${padre}/${sub}`;
+        }
     }
 
-    // Caso 3: "crea/create [la|a] carpeta [llamada] <ruta>" (ej: "crea la carpeta src/test" o "create folder src/test")
-    const m3 = texto.match(/\b(?:crea|crear|haz|hacer|create|make|mkdir|new)\s+(?:una\s+|la\s+|a\s+|the\s+)?(?:carpeta|directorio|folder|directory|dir)\s+(?:llamad[ao]|called|named)?\s*([a-zA-Z0-9_\-\.\/]+)/i);
+    // Caso 3: crea/create [la|a] carpeta [llamada] <ruta>
+    const m3 = limpio.match(/\b(?:crea|crear|haz|hacer|create|make|mkdir|new)\s+(?:una\s+|la\s+|a\s+|the\s+)?(?:carpeta|directorio|folder|directory|dir)\s+(?:llamad[ao]|called|named)?\s*([a-zA-Z0-9_\-\.\/]+)/i);
     if (m3) {
-        const candidata = m3[1].replace(/^[\/\\\"'`]+|[\/\\\"'`]+$/g, '');
-        if (candidata && !['una', 'la', 'el', 'un', 'nuevo', 'nueva', 'a', 'the', 'new'].includes(candidata.toLowerCase())) {
+        const candidata = m3[1].replace(/^[\\/]+|[\\/]+$/g, '');
+        const stopWords = ['una', 'la', 'el', 'un', 'nuevo', 'nueva', 'a', 'the', 'new'];
+        if (candidata && !stopWords.includes(candidata.toLowerCase())) {
             return candidata;
         }
     }
