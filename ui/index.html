@@ -1080,9 +1080,9 @@
         div.appendChild(statusBar);
         iniciarGeneracionTimer(statusBar);
 
-        // Contenedor de contenido generado
+        // Contenedor de contenido generado con clase streaming para transiciones suaves
         const contentDiv = document.createElement('div');
-        contentDiv.className = 'ia-content';
+        contentDiv.className = 'ia-content streaming';
         contentDiv.innerHTML = formatearMarkdownSimple(texto);
         div.appendChild(contentDiv);
 
@@ -1207,9 +1207,9 @@
     currentIaMessage = crearBurbujaDOM('ia', '', null, true);
     
     // Resetear estado del stream
-    streamBuffer = '';
-    streamTextoAcumulado = '';
-    if (streamRafId) { cancelAnimationFrame(streamRafId); streamRafId = null; }
+    streamPendiente = '';
+    streamTextoVisible = '';
+    if (streamIdleTimer) { clearTimeout(streamIdleTimer); streamIdleTimer = null; }
 
     window.api.enviarMensaje(texto.trim(), historialParaIA, sesionActual.carpeta || null);
     
@@ -1228,12 +1228,12 @@
   }
 
   // =========================================================================
-  // Streaming de la IA — Skeleton + Renderizado por Párrafos
+  // Streaming de la IA — Renderizado Suave por Párrafos Completos (Smooth Paragraph Streaming)
   // =========================================================================
 
-  let streamBuffer = '';
-  let streamTextoAcumulado = '';
-  let streamRafId = null;
+  let streamPendiente = '';
+  let streamTextoVisible = '';
+  let streamIdleTimer = null;
 
   function mostrarSkeleton() {
     if (!currentIaMessage) return;
@@ -1247,28 +1247,77 @@
     if (sk) sk.style.display = 'none';
   }
 
-  function renderStream() {
-    streamRafId = null;
+  /**
+   * Extrae el siguiente bloque semántico completo del buffer acumulado:
+   *  - Avisos preparatorios del backend ([Mac: ...], [Analizando...], ⚡ [Skill...])
+   *  - Bloques de código completos (```lang ... ```\n)
+   *  - Párrafos completos delimitados por doble salto de línea (\n\n)
+   *  - Oraciones coherentes si el párrafo es largo (> 160 caracteres)
+   */
+  function extraerSiguienteBloque(texto) {
+    if (!texto) return { bloque: '', restante: '' };
+
+    // 1. Avisos preparatorios al inicio (ej: [Mac: ...], [Analizando...], ⚡ [Skill...])
+    const mAviso = texto.match(/^(?:⚡?\s*\[[^\]]+\](?:\n+|\s+))+/);
+    if (mAviso) {
+      const len = mAviso[0].length;
+      return { bloque: texto.slice(0, len), restante: texto.slice(len) };
+    }
+
+    // 2. Bloque de código completo (```lang ... ```\n)
+    if (texto.startsWith('```')) {
+      const finCodigo = texto.indexOf('```', 3);
+      if (finCodigo !== -1) {
+        let finBloque = finCodigo + 3;
+        if (texto[finBloque] === '\n') finBloque++;
+        return { bloque: texto.slice(0, finBloque), restante: texto.slice(finBloque) };
+      }
+    }
+
+    // 3. Párrafo completo delimitado por doble salto de línea (\n\n)
+    const idxDoble = texto.indexOf('\n\n');
+    if (idxDoble !== -1) {
+      const finBloque = idxDoble + 2;
+      return { bloque: texto.slice(0, finBloque), restante: texto.slice(finBloque) };
+    }
+
+    // 4. Si el buffer es extenso (> 160 caracteres) y contiene fin de oración
+    if (texto.length > 160) {
+      const mPunto = texto.match(/[\.\?\!][\s\n]+/);
+      if (mPunto && mPunto.index !== undefined) {
+        const finOracion = mPunto.index + mPunto[0].length;
+        return { bloque: texto.slice(0, finOracion), restante: texto.slice(finOracion) };
+      }
+    }
+
+    return { bloque: '', restante: texto };
+  }
+
+  function renderVisible(esFinal = false) {
     if (!currentIaMessage) return;
 
     const sesionActual = sesiones.find(s => s.id === sesionActivaId);
     if (!sesionActual) return;
     const ultimoMsg = sesionActual.mensajes[sesionActual.mensajes.length - 1];
-
-    streamTextoAcumulado += streamBuffer;
-    streamBuffer = '';
-    ultimoMsg.texto = streamTextoAcumulado;
+    if (ultimoMsg) {
+      ultimoMsg.texto = streamTextoVisible;
+    }
 
     const contentDiv = currentIaMessage.querySelector('.ia-content');
     if (contentDiv) {
-      contentDiv.innerHTML = formatearMarkdownSimple(streamTextoAcumulado);
+      if (esFinal) {
+        contentDiv.classList.remove('streaming');
+      } else {
+        contentDiv.classList.add('streaming');
+      }
+      contentDiv.innerHTML = formatearMarkdownSimple(streamTextoVisible);
     } else {
-      currentIaMessage.innerHTML = formatearMarkdownSimple(streamTextoAcumulado);
+      currentIaMessage.innerHTML = formatearMarkdownSimple(streamTextoVisible);
     }
 
     // El skeleton se mantiene visible si el texto acumulado solo contiene
     // avisos preparatorios del backend. Se oculta cuando la IA emite respuesta real.
-    if (esTextoSoloPreparatorio(streamTextoAcumulado)) {
+    if (esTextoSoloPreparatorio(streamTextoVisible)) {
       mostrarSkeleton();
     } else {
       ocultarSkeleton();
@@ -1279,28 +1328,52 @@
 
   window.api.onStream((chunk) => {
     if (!currentIaMessage) return;
-    streamBuffer += chunk;
-    // Usar requestAnimationFrame — se sincroniza con el refresh de pantalla (60fps)
-    // y no bloquea el hilo principal
-    if (!streamRafId) {
-      streamRafId = requestAnimationFrame(renderStream);
+    streamPendiente += chunk;
+
+    // Extraer y presentar suavemente todos los párrafos/bloques completos que ya estén listos
+    let huboCambio = false;
+    while (streamPendiente.length > 0) {
+      const { bloque, restante } = extraerSiguienteBloque(streamPendiente);
+      if (!bloque) break;
+      streamTextoVisible += bloque;
+      streamPendiente = restante;
+      huboCambio = true;
     }
-    // Flush inmediato en saltos de línea dobles (fin de párrafo)
-    if (chunk.includes('\n\n')) {
-      if (streamRafId) cancelAnimationFrame(streamRafId);
-      streamRafId = null;
-      renderStream();
+
+    if (huboCambio) {
+      renderVisible(false);
+    }
+
+    // Temporizador de inactividad: si la IA pausa su pensamiento por más de 450ms,
+    // volcar suavemente la oración o párrafo pendiente para no demorar al usuario
+    if (streamIdleTimer) clearTimeout(streamIdleTimer);
+    if (streamPendiente.trim().length > 0) {
+      streamIdleTimer = setTimeout(() => {
+        if (streamPendiente.trim().length > 0) {
+          streamTextoVisible += streamPendiente;
+          streamPendiente = '';
+          renderVisible(false);
+        }
+      }, 450);
     }
   });
 
   window.api.onFinStream(() => {
-    // Flush final
-    if (streamRafId) cancelAnimationFrame(streamRafId);
-    streamRafId = null;
-    if (streamBuffer) renderStream();
+    if (streamIdleTimer) {
+      clearTimeout(streamIdleTimer);
+      streamIdleTimer = null;
+    }
 
-    streamBuffer = '';
-    streamTextoAcumulado = '';
+    // Volcar cualquier residuo pendiente en el buffer al finalizar
+    if (streamPendiente.length > 0) {
+      streamTextoVisible += streamPendiente;
+      streamPendiente = '';
+    }
+
+    renderVisible(true);
+
+    streamPendiente = '';
+    streamTextoVisible = '';
 
     ocultarSkeleton();
     finalizarGeneracionTimer();
@@ -1350,6 +1423,15 @@
 
   btnStop.addEventListener('click', () => {
     window.api.detenerGeneracion();
+    if (streamIdleTimer) {
+      clearTimeout(streamIdleTimer);
+      streamIdleTimer = null;
+    }
+    if (streamPendiente.length > 0) {
+      streamTextoVisible += streamPendiente;
+      streamPendiente = '';
+      renderVisible(true);
+    }
     ocultarSkeleton();
     finalizarGeneracionTimer();
 

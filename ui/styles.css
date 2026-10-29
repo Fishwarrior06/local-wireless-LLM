@@ -511,6 +511,25 @@ select#select-modelo option {
   width: 100%;
 }
 
+/* Transición suave de aparición por párrafos completos (Smooth Paragraph Streaming) */
+.ia-content.streaming > *:last-child {
+  animation: smoothParagraphReveal 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: opacity, transform, filter;
+}
+
+@keyframes smoothParagraphReveal {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+    filter: blur(1.5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
 .ia code {
   font-family: var(--font-mono);
   font-size: 12.5px;
