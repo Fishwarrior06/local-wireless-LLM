@@ -1,10 +1,13 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Local-LLM</title>
   <link rel="stylesheet" href="styles.css">
+  <!-- Highlight.js: Syntax highlighting ligero para code blocks -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 </head>
 <body>
   <!-- Área de arrastre nativa de macOS -->
@@ -848,6 +851,38 @@
   // =========================================================================
   // Markdown & Artifacts
   // =========================================================================
+  // =========================================================================
+  // Smooth Word Streaming — Sistema de animación palabra por palabra
+  // Convierte texto plano a spans con animación de fade-in + micro-lift
+  // =========================================================================
+
+  /**
+   * Convierte un bloque de texto plano (ya procesado por markdown) en
+   * spans individuales por palabra con animación .stream-word.
+   * Solo se aplica durante streaming activo; en modo histórico se omite.
+   * @param {string} htmlStr - HTML ya formateado por el renderizador markdown
+   * @param {boolean} aplicar - Si true, envuelve las palabras del texto
+   * @returns {string} HTML con spans animados (o sin cambios si aplicar=false)
+   */
+  function aplicarStreamWords(htmlStr, aplicar) {
+    if (!aplicar) return htmlStr;
+    // Reemplazar nodos de texto dentro de <p>, <li>, <h1-6>, <blockquote>
+    // usando una regex de texto fuera de tags HTML para no romper atributos
+    return htmlStr.replace(/(<(?:p|li|h[1-6]|blockquote)[^>]*>)([\s\S]*?)(<\/(?:p|li|h[1-6]|blockquote)>)/g,
+      (_, open, inner, close) => {
+        // No animar si contiene sub-tags complejos (code-artifact, tabla, etc.)
+        if (inner.includes('code-artifact') || inner.includes('<table')) {
+          return open + inner + close;
+        }
+        // Envolver cada "token" (palabra o fragmento de HTML) con span animado
+        const animado = inner.replace(/([^\s<>]+)/g,
+          tok => `<span class="stream-word">${tok}</span>`
+        );
+        return open + animado + close;
+      }
+    );
+  }
+
   function formatearMarkdownSimple(texto) {
     if (!texto) return '';
 
@@ -877,7 +912,7 @@
         : { copyBtn: 'Copiar' };
       const copyText = t.copyBtn || 'Copiar';
 
-      const htmlBloque = `<div class="code-artifact"><div class="code-header"><span>${langLimpio}</span><button class="btn-copy" onclick="copiarCodigo(this)">${copyText}</button></div><pre><code>${escaped}</code></pre></div>`;
+      const htmlBloque = `<div class="code-artifact"><div class="code-header"><span class="code-lang-label">${langLimpio}</span><button class="btn-copy" onclick="copiarCodigo(this)" data-lang="${langLimpio}">📋 ${copyText}</button></div><pre><code class="language-${langLimpio}">${escaped}</code></pre></div>`;
       bloques.push(htmlBloque);
       return `\n\n@@CODEBLOCK${idx}@@\n\n`;
     });
@@ -966,13 +1001,22 @@
     const t = I18N[idiomaActual];
     const pre = btn.closest('.code-artifact').querySelector('pre code');
     if (pre) {
-      navigator.clipboard.writeText(pre.innerText);
-      btn.innerText = t.copiedBtn;
-      btn.style.color = '#30D158';
-      setTimeout(() => {
-        btn.innerText = t.copyBtn;
-        btn.style.color = '';
-      }, 1500);
+      // Obtener texto sin etiquetas HTML (innerText respeta saltos de línea)
+      const textoCodigo = pre.innerText || pre.textContent;
+      navigator.clipboard.writeText(textoCodigo).then(() => {
+        // Estado "¡Copiado!" con checkmark verde
+        btn.textContent = '✓ ¡Copiado!';
+        btn.classList.add('copiado');
+        // Restaurar al estado original tras 2 segundos
+        setTimeout(() => {
+          btn.textContent = "📋 " + (t.copyBtn || 'Copiar');
+          btn.classList.remove('copiado');
+        }, 2000);
+      }).catch(() => {
+        // Fallback silencioso si el portapapeles no está disponible
+        btn.textContent = '✗ Error';
+        setTimeout(() => { btn.textContent = t.copyBtn || 'Copiar'; }, 1500);
+      });
     }
   };
 
@@ -1110,6 +1154,8 @@
         const contentDiv = document.createElement('div');
         contentDiv.className = 'ia-content';
         contentDiv.innerHTML = formatearMarkdownSimple(texto);
+        // Aplicar syntax highlighting a bloques de código en mensajes históricos
+        aplicarHighlightJS(contentDiv);
         div.appendChild(contentDiv);
       }
     }
@@ -1293,6 +1339,26 @@
     return { bloque: '', restante: texto };
   }
 
+  // =========================================================================
+  // Highlight.js — Aplicar syntax highlighting a bloques de código en el DOM
+  // Se ejecuta después de inyectar innerHTML para resaltar en tiempo real
+  // =========================================================================
+
+  /**
+   * Busca todos los <pre><code> dentro de un contenedor y aplica hljs si
+   * está disponible. Seguro de invocar varias veces (detecta si ya fue resaltado).
+   * @param {HTMLElement} contenedor
+   */
+  function aplicarHighlightJS(contenedor) {
+    if (typeof hljs === 'undefined') return;
+    contenedor.querySelectorAll('pre code').forEach(block => {
+      // Evitar re-resaltar bloques ya procesados por hljs
+      if (!block.classList.contains('hljs')) {
+        hljs.highlightElement(block);
+      }
+    });
+  }
+
   function renderVisible(esFinal = false) {
     if (!currentIaMessage) return;
 
@@ -1310,7 +1376,14 @@
       } else {
         contentDiv.classList.add('streaming');
       }
-      contentDiv.innerHTML = formatearMarkdownSimple(streamTextoVisible);
+      // Aplicar animación palabra-por-palabra durante streaming; sin ella al finalizar
+      const htmlConAnimacion = aplicarStreamWords(
+        formatearMarkdownSimple(streamTextoVisible),
+        !esFinal
+      );
+      contentDiv.innerHTML = htmlConAnimacion;
+      // Aplicar Highlight.js a todos los bloques de código recién inyectados
+      aplicarHighlightJS(contentDiv);
     } else {
       currentIaMessage.innerHTML = formatearMarkdownSimple(streamTextoVisible);
     }

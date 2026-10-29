@@ -241,7 +241,24 @@ body {
   to   { opacity: 1; transform: scale(1); }
 }
 
-/* Segmentos de stream con fade-in suave */
+/* ==========================================================================
+   Smooth Word Streaming — ChatGPT-style word-by-word fade-in + micro-lift
+   Cada .stream-word emerge con opacidad y un micro-desplazamiento vertical
+   ========================================================================== */
+
+/* Palabra emitida durante streaming: fade-in + translateY 2px → 0 */
+.stream-word {
+  display: inline;
+  animation: wordReveal 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: opacity, transform;
+}
+
+@keyframes wordReveal {
+  0%   { opacity: 0; transform: translateY(2px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Segmentos de stream completos (párrafos, bloques): fade-in suave legado */
 .stream-segment {
   animation: segmentFadeIn 0.25s ease forwards;
 }
@@ -540,59 +557,102 @@ select#select-modelo option {
   color: #ECECEC;
 }
 
-/* Bloques de Código estilo Xcode / macOS */
+/* Bloques de Código — estilo ChatGPT/Xcode con Highlight.js */
 .code-artifact {
-  background: #111115;
-  border: 0.5px solid var(--border-subtle);
+  background: #0d0d0d;
+  border: 0.5px solid rgba(255, 255, 255, 0.10);
   border-radius: var(--radius-card);
-  margin: 12px 0;
+  margin: 14px 0;
   overflow: hidden;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.50), 0 1px 0 rgba(255,255,255,0.06) inset;
+  /* Streaming del bloque entero: fade-in suave cuando aparece */
+  animation: codeBlockReveal 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+@keyframes codeBlockReveal {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Barra de encabezado: lenguaje a la izquierda, botón a la derecha */
 .code-header {
-  background: rgba(255, 255, 255, 0.04);
-  border-bottom: 0.5px solid var(--border-subtle);
-  padding: 8px 14px;
+  background: #1a1a1a;
+  border-bottom: 0.5px solid rgba(255, 255, 255, 0.10);
+  padding: 9px 14px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 11.5px;
-  color: var(--text-tertiary);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
   font-family: var(--font-mono);
+  user-select: none;
 }
 
+/* Nombre del lenguaje */
+.code-lang-label {
+  letter-spacing: 0.4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  text-transform: lowercase;
+}
+
+/* Botón Copiar — estado normal */
 .btn-copy {
-  background: transparent;
-  border: 0.5px solid var(--border-subtle);
-  color: var(--text-secondary);
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 0.5px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.60);
+  font-size: 11.5px;
+  font-family: var(--font-system);
+  padding: 3px 10px;
+  border-radius: 6px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  line-height: 1.4;
 }
 
 .btn-copy:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.13);
+  color: rgba(255, 255, 255, 0.90);
+  border-color: rgba(255, 255, 255, 0.25);
 }
 
+/* Estado "¡Copiado!" con checkmark verde */
+.btn-copy.copiado {
+  color: #30D158;
+  border-color: rgba(48, 209, 88, 0.40);
+  background: rgba(48, 209, 88, 0.10);
+  pointer-events: none;
+}
+
+/* Contenido del bloque de código con Highlight.js */
 .code-artifact pre {
-  padding: 14px 18px;
+  margin: 0;
+  padding: 16px 18px;
   overflow-x: auto;
   font-family: var(--font-mono);
   font-size: 13px;
-  line-height: 1.55;
-  color: #9cdcfe;
+  line-height: 1.60;
+  background: transparent !important;
 }
 
-.code-artifact pre code {
+/* Forzar fondo transparente en el <code> que Highlight.js envuelve */
+.code-artifact pre code.hljs {
+  background: transparent !important;
+  padding: 0 !important;
+  font-size: inherit !important;
+  line-height: inherit !important;
+  border: none !important;
+}
+
+/* Fallback: si hljs no resalta (lenguaje desconocido), usar color base */
+.code-artifact pre code:not(.hljs) {
   background: transparent;
   padding: 0;
   border: none;
-  color: inherit;
+  color: #abb2bf;
 }
 
 /* Badges de Skills / Contexto */
