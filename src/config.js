@@ -16,7 +16,6 @@ export const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 // Cargar .env de desarrollo SOLO si no estamos en la app empaquetada
 const esProduccionEmpaquetada = Boolean(app && app.isPackaged);
-
 if (!esProduccionEmpaquetada) {
     dotenv.config({ path: path.join(PROJECT_ROOT, '.env') });
 }
@@ -49,6 +48,8 @@ function cargarConfigGuardada() {
 const configGuardada = cargarConfigGuardada();
 
 export const config = {
+    // Flag indicating whether to route requests through the local daemon (port 11435)
+    useDaemon: configGuardada.useDaemon || false,
     // Si es un DMG distribuido a un usuario final y no ha guardado su IP, empieza VACÍO (Dummy)
     // para que obligatoriamente se abra el Asistente de Setup
     ollamaHost: configGuardada.ollamaHost || (esProduccionEmpaquetada ? '' : process.env.OLLAMA_HOST || ''),
@@ -57,7 +58,7 @@ export const config = {
     projectRoot: PROJECT_ROOT,
     skillsDir: path.join(PROJECT_ROOT, 'skills'),
 
-    guardarConfig({ host, model, language }) {
+    guardarConfig({ host, model, language, useDaemon }) {
         if (host !== undefined) {
             let cleanHost = host.trim().replace(/^https?:\/\//i, '').replace(/\/$/, '');
             if (!cleanHost.includes(':')) {
@@ -65,24 +66,32 @@ export const config = {
             }
             this.ollamaHost = cleanHost;
         }
-
         if (model !== undefined) {
             this.currentModel = model.trim();
         }
-
         if (language !== undefined) {
             this.language = language === 'en' ? 'en' : 'es';
         }
-
+        if (useDaemon !== undefined) {
+            this.useDaemon = !!useDaemon;
+        }
         try {
             const dir = path.dirname(CONFIG_PATH);
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-            
-            fs.writeFileSync(CONFIG_PATH, JSON.stringify({
-                ollamaHost: this.ollamaHost,
-                currentModel: this.currentModel,
-                language: this.language
-            }, null, 2), 'utf-8');
+            fs.writeFileSync(
+                CONFIG_PATH,
+                JSON.stringify(
+                    {
+                        ollamaHost: this.ollamaHost,
+                        currentModel: this.currentModel,
+                        language: this.language,
+                        useDaemon: this.useDaemon,
+                    },
+                    null,
+                    2
+                ),
+                'utf-8'
+            );
         } catch (e) {
             console.error('[Config] Error guardando config persistente:', e.message);
         }
@@ -93,5 +102,5 @@ export const config = {
             this.currentModel = newModel.trim();
             this.guardarConfig({ model: this.currentModel });
         }
-    }
+    },
 };
