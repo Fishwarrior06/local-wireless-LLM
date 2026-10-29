@@ -193,7 +193,9 @@
       btnWithoutWorkspace: 'Sin Workspace',
       btnCreateWithWorkspace: 'Iniciar Conversación',
       generating: 'Generando...',
-      generated: 'Generado -'
+      generated: 'Generado -',
+      reconnecting: 'Reconectando con servidor...',
+      recovered: 'Recuperado del servidor -'
     },
     en: {
       conversationsTitle: 'CONVERSATIONS',
@@ -227,7 +229,9 @@
       btnWithoutWorkspace: 'Without Workspace',
       btnCreateWithWorkspace: 'Start Conversation',
       generating: 'Generating...',
-      generated: 'Generated -'
+      generated: 'Generated -',
+      reconnecting: 'Reconnecting to server...',
+      recovered: 'Recovered from server -'
     }
   };
 
@@ -1301,17 +1305,62 @@
     ocultarSkeleton();
     finalizarGeneracionTimer();
 
+    // Limpiar trabajo pendiente de la sesión activa al finalizar con éxito
+    const sesionActual = sesiones.find(s => s.id === sesionActivaId);
+    if (sesionActual) {
+      sesionActual.trabajoPendiente = null;
+    }
+
     estaGenerando = false;
     btnStop.style.display = 'none';
     guardarSesiones();
   });
 
+  // Suscripción al Job ID asignado por el daemon/backend
+  if (window.api.onJobAsignado) {
+    window.api.onJobAsignado((data) => {
+      const sesionActual = sesiones.find(s => s.id === sesionActivaId);
+      if (sesionActual && data?.jobId) {
+        sesionActual.trabajoPendiente = data;
+        guardarSesiones();
+      }
+    });
+  }
+
+  // Notificación visual si la conexión se cae y el cliente reintenta
+  if (window.api.onStreamReconnecting) {
+    window.api.onStreamReconnecting((intento) => {
+      if (currentStatusBar) {
+        const t = I18N[idiomaActual];
+        const textEl = currentStatusBar.querySelector('.ia-status-text');
+        if (textEl) {
+          textEl.textContent = `⏳ ${t.reconnecting} (${intento})`;
+        }
+      }
+    });
+  }
+
+  // Detección nativa de macOS cuando se abre la tapa del MacBook o se reanuda de suspensión
+  if (window.api.onSistemaResumed) {
+    window.api.onSistemaResumed(() => {
+      console.log('[Mac Power] Tapa abierta o sistema reanudado. Sincronizando trabajos pendientes...');
+      verificarTrabajosPendientes();
+    });
+  }
+
   btnStop.addEventListener('click', () => {
     window.api.detenerGeneracion();
     ocultarSkeleton();
     finalizarGeneracionTimer();
+
+    const sesionActual = sesiones.find(s => s.id === sesionActivaId);
+    if (sesionActual) {
+      sesionActual.trabajoPendiente = null;
+    }
+
     estaGenerando = false;
     btnStop.style.display = 'none';
+    guardarSesiones();
   });
 
   input.addEventListener('input', () => {
@@ -1355,6 +1404,76 @@
     }
   });
 
+  // Comprobar si quedaron trabajos pendientes si la Mac se apagó o perdió conexión
+  async function verificarTrabajosPendientes() {
+    if (!window.api?.consultarJobPendiente) return;
+    let huboCambios = false;
+
+    for (const sesion of sesiones) {
+      if (!sesion.trabajoPendiente?.jobId) continue;
+      try {
+        const res = await window.api.consultarJobPendiente(sesion.trabajoPendiente);
+        if (res && res.success && res.status === 'completed' && res.output) {
+          const t = I18N[idiomaActual];
+          const segs = res.durationSeconds ? `${res.durationSeconds}s` : '✓';
+
+          const ultMsg = sesion.mensajes[sesion.mensajes.length - 1];
+          if (ultMsg && ultMsg.rol === 'ia') {
+            ultMsg.texto = res.output;
+            ultMsg.tiempo = segs;
+          } else {
+            sesion.mensajes.push({
+              rol: 'ia',
+              texto: res.output,
+              tiempo: segs
+            });
+          }
+
+          sesion.trabajoPendiente = null;
+          huboCambios = true;
+
+          // Si es la sesión activa en este momento, re-renderizar chat para mostrar el output
+          if (sesion.id === sesionActivaId) {
+            chat.innerHTML = '';
+            sesion.mensajes.forEach(msg => {
+              if (msg.texto && msg.texto.trim() !== '') crearBurbujaDOM(msg.rol, msg.texto, msg.tiempo);
+            });
+            scrollAbajo(true);
+          }
+        } else if (res && res.success && res.status === 'running' && res.output) {
+          // El modelo sigue pensando en la GPU del host mientras la Mac acaba de despertar
+          const ultMsg = sesion.mensajes[sesion.mensajes.length - 1];
+          if (ultMsg && ultMsg.rol === 'ia') {
+            ultMsg.texto = res.output;
+            huboCambios = true;
+            if (sesion.id === sesionActivaId && currentIaMessage) {
+              const contentDiv = currentIaMessage.querySelector('.ia-content');
+              if (contentDiv) contentDiv.innerHTML = formatearMarkdownSimple(res.output);
+              scrollAbajo(false);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[Offline recovery] No se pudo recuperar trabajo:', err.message);
+      }
+    }
+
+    if (huboCambios) guardarSesiones();
+  }
+
+  // Sondeo y recuperación automática ante reconexión de red
+  window.addEventListener('online', () => {
+    verificarTrabajosPendientes();
+  });
+
+  // Si hay algún trabajo pendiente en segundo plano, consultar periódicamente
+  setInterval(() => {
+    const tienePendientes = sesiones.some(s => s.trabajoPendiente?.jobId);
+    if (tienePendientes) {
+      verificarTrabajosPendientes();
+    }
+  }, 8000);
+
   // Inicialización
   aplicarTraducciones();
   actualizarSidebar();
@@ -1369,6 +1488,7 @@
   }
   inicializarModelos();
   inicializarSkills();
+  verificarTrabajosPendientes();
 </script>
 </body>
 </html>

@@ -16,5 +16,11 @@ contextBridge.exposeInMainWorld('api', {
 
     // Setup y configuración de IP Tailscale
     testConexionOllama: (host) => ipcRenderer.invoke('test-conexion-ollama', host),
-    guardarConfigIP: (datos) => ipcRenderer.invoke('guardar-config-ip', datos)
+    guardarConfigIP: (datos) => ipcRenderer.invoke('guardar-config-ip', datos),
+
+    // Inferencia Asíncrona Desacoplada & Recuperación de Desconexión
+    onJobAsignado: (callback) => ipcRenderer.on('job-asignado', (event, data) => callback(data)),
+    onStreamReconnecting: (callback) => ipcRenderer.on('stream-reconnecting', (event, intento) => callback(intento)),
+    onSistemaResumed: (callback) => ipcRenderer.on('sistema-resumed', () => callback()),
+    consultarJobPendiente: (datos) => ipcRenderer.invoke('consultar-job-pendiente', datos)
 });

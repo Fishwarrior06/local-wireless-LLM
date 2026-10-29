@@ -2,7 +2,13 @@ import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
-import { app } from 'electron';
+let app = null;
+if (process.versions && process.versions.electron) {
+    try {
+        const electron = await import('electron');
+        app = electron.app || electron.default?.app || null;
+    } catch {}
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

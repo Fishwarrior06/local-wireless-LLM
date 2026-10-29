@@ -10,7 +10,8 @@
     "cli": "node agents.js",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "daemon": "node server-daemon.js"
   },
   "build": {
     "appId": "com.local.llm",
@@ -21,11 +22,17 @@
     },
     "mac": {
       "category": "public.app-category.developer-tools",
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "icon": "ui/assets/icon.png"
     },
     "win": {
-      "target": ["nsis", "portable"],
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "icon": "ui/assets/icon.png"
     },
     "files": [

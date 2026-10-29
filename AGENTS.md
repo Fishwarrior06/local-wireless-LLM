@@ -36,6 +36,7 @@ local-wireless-LLM/
 │   └── assets/                 # Iconos e imágenes del sistema
 │
 ├── main.js                     # Proceso Electron (Ventana, IPC, Dock, menús nativos)
+├── server-daemon.js            # Daemon asíncrono para inferencia desacoplada (puerto 11435)
 ├── agents.js                   # CLI interactivo (Readline + Chalk)
 ├── preload.js                  # IPC seguro (contextBridge)
 └── AGENTS.md
@@ -111,3 +112,22 @@ triggers: ["refactorizar", "clean-code", "modularizar"]
 | `obtener-skills` | `ipcMain.handle` | Renderer ⇄ Main | Devuelve las skills para autocompletado en el frontend. |
 | `test-conexion-ollama` | `ipcMain.handle` | Renderer ⇄ Main | Valida conectividad y latencia contra el host de Ollama. |
 | `guardar-config-ip` | `ipcMain.handle` | Renderer ⇄ Main | Persiste la configuración del host e idioma en disco. |
+| `job-asignado` | `event.sender.send` | Main ➔ Renderer | Emite el `jobId` único asignado para persistencia en sesión. |
+| `stream-reconnecting` | `event.sender.send` | Main ➔ Renderer | Notifica reintento automático de conexión al stream. |
+| `consultar-job-pendiente` | `ipcMain.handle` | Renderer ⇄ Main | Consulta y recupera resultados de jobs si la Mac se apagó. |
+
+---
+
+## 8. Arquitectura Híbrida Asíncrona (Resiliencia ante Desconexión o Apagado)
+
+Para evitar interrupciones de inferencia cuando la Mac se suspende, se apaga o pierde conectividad con la red Tailscale/WiFi:
+
+1. **Daemon en el Host (`server-daemon.js`, puerto 11435)**:
+   - Se ejecuta en la máquina con GPU junto a Ollama.
+   - Recibe solicitudes vía `POST /api/jobs`, generando un `jobId` y procesando la inferencia localmente contra Ollama (`127.0.0.1:11434`).
+   - Los tokens se acumulan en memoria de forma desacoplada. Si el socket con la Mac se interrumpe, **la GPU no se detiene** y completa la respuesta.
+   - Ofrece streaming Server-Sent Events (`GET /api/jobs/:id/stream?offset=N`) para reconexión fluida desde el último token recibido.
+2. **Cliente Mac Inteligente**:
+   - Detecta si el daemon está disponible en el host. Si lo está, despacha los jobs de forma desacoplada con auto-reconexión y persistencia de `jobId` en sesión (`localStorage`).
+   - Si la Mac se apaga a mitad de una tarea y se reenciende horas más tarde, consulta `consultar-job-pendiente` y recupera el output final completo, aplicando los cambios en disco automáticamente si fue un comando de edición (`modoEditaRepo`).
+   - Si el daemon no está en ejecución, conmuta de forma transparente al modo directo con Ollama (`:11434`).

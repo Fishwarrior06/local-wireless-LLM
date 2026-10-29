@@ -101,6 +101,23 @@ If your LLM server runs on Windows, you must allow incoming TCP traffic on port 
 
 ```powershell
 netsh advfirewall firewall add rule name="Ollama Tailscale" dir=in action=allow protocol=TCP localport=11434
+netsh advfirewall firewall add rule name="Local-LLM Daemon" dir=in action=allow protocol=TCP localport=11435
+```
+
+---
+
+### Step 4b: (Optional) Run the Async Daemon for Offline & Sleep Resilience
+
+To allow inference requests to keep generating on the GPU even if your Mac loses internet, sleeps, or shuts down:
+
+```bash
+# On the Host machine (runs lightweight on port 11435 alongside Ollama)
+npm run daemon
+# or directly:
+node server-daemon.js
+```
+
+The desktop app automatically detects port 11435 on the host. If your Mac loses network or goes to sleep, Ollama never stops; when your Mac reconnects, it retrieves the output and applies file changes straight to disk.
 ```
 
 ---

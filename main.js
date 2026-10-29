@@ -1,10 +1,10 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage, powerMonitor } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 import { config } from './src/config.js';
-import { generarStream, listarModelosOllama } from './src/ollama.js';
+import { generarStream, listarModelosOllama, consultarEstadoJob, abortarJob, verificarDaemonDisponible } from './src/ollama.js';
 import { procesarInputUsuario } from './src/commands.js';
 import { obtenerSkills } from './src/skills-loader.js';
 import { leerCarpetaRecursiva, formatearContextoCarpeta } from './src/fs-tools.js';
@@ -131,6 +131,23 @@ function createWindow() {
 app.whenReady().then(() => {
     setDockIcon(); // Primera vez, antes de crear la ventana
     createWindow();
+
+    // Monitoreo nativo de suspensión y reanudación de macOS (Cerrar / Abrir tapa del MacBook)
+    if (powerMonitor) {
+        powerMonitor.on('suspend', () => {
+            console.log('[PowerMonitor] macOS entrando en suspensión / sleep.');
+        });
+
+        powerMonitor.on('resume', () => {
+            console.log('[PowerMonitor] macOS reanudado tras suspensión. Esperando que Tailscale/WiFi restablezcan conexión...');
+            // Esperar 1.8 segundos a que el túnel de red WireGuard y WiFi se reconecten
+            setTimeout(() => {
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('sistema-resumed');
+                }
+            }, 1800);
+        });
+    }
 });
 
 /**
@@ -304,12 +321,76 @@ ipcMain.handle('obtener-skills', async () => {
     }));
 });
 
+// Consultar estado de un job pendiente tras reinicio de la Mac o corte de red
+ipcMain.handle('consultar-job-pendiente', async (event, { jobId, carpeta, modoEditaRepo, archivoDestino, modoCreacion, modoEdicion }) => {
+    if (!jobId) return { success: false, error: 'No jobId provided' };
+    try {
+        const info = await consultarEstadoJob(jobId);
+        if (info && info.status === 'completed' && info.output) {
+            // Si el trabajo completado era de edición múltiple, aplicar cambios a disco ahora
+            if (modoEditaRepo) {
+                try {
+                    const cambios = parsearCambiosMultiples(info.output);
+                    let count = 0;
+                    for (const { ruta, contenido, esDirectorio } of cambios) {
+                        if (!ruta) continue;
+                        const rutaAbsoluta = path.join(carpeta || config.projectRoot, ruta);
+                        if (esDirectorio) {
+                            if (!fs.existsSync(rutaAbsoluta)) {
+                                fs.mkdirSync(rutaAbsoluta, { recursive: true });
+                                const gitkeep = path.join(rutaAbsoluta, '.gitkeep');
+                                if (!fs.existsSync(gitkeep)) fs.writeFileSync(gitkeep, '', 'utf-8');
+                            }
+                            count++;
+                            continue;
+                        }
+                        const dir = path.dirname(rutaAbsoluta);
+                        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+                        fs.writeFileSync(rutaAbsoluta, (contenido || '').trim(), 'utf-8');
+                        count++;
+                    }
+                    return {
+                        success: true,
+                        status: 'completed',
+                        output: info.output,
+                        durationSeconds: info.durationSeconds,
+                        archivosModificados: count
+                    };
+                } catch (e) {
+                    console.error('[Job Recovery] Error aplicando cambios en disco:', e);
+                }
+            } else if ((modoEdicion || modoCreacion) && archivoDestino) {
+                const dir = path.dirname(archivoDestino);
+                if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+                fs.writeFileSync(archivoDestino, (info.output || '').trim(), 'utf-8');
+            }
+
+            return {
+                success: true,
+                status: 'completed',
+                output: info.output,
+                durationSeconds: info.durationSeconds
+            };
+        }
+
+        return {
+            success: true,
+            status: info?.status || 'running',
+            output: info?.output || '',
+            durationSeconds: info?.durationSeconds || 0
+        };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+
 // Procesar mensaje del usuario
 ipcMain.on('mensaje-usuario', async (event, data) => {
-    // Soportar tanto string directo como objeto estructurado { input, historial, carpeta }
+    // Soportar tanto string directo como objeto estructurado { input, historial, carpeta, jobId }
     const inputTexto = typeof data === 'string' ? data : (data?.input || '');
     const historial = Array.isArray(data?.historial) ? data.historial : [];
     const carpeta = data?.carpeta || null;
+    const jobId = data?.jobId || `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
     const parsed = procesarInputUsuario(inputTexto, carpeta || null);
 
@@ -402,6 +483,16 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
         }
     }
 
+    // Notificar al renderer del Job ID para persistencia en sesión si la Mac se apaga
+    event.sender.send('job-asignado', {
+        jobId,
+        carpeta: carpeta || null,
+        modoEditaRepo: Boolean(parsed.modoEditaRepo),
+        modoEdicion: Boolean(parsed.modoEdicion),
+        modoCreacion: Boolean(parsed.modoCreacion),
+        archivoDestino: parsed.archivoDestino || null
+    });
+
     // El promptCompleto lleva el contenido del repo + instrucción del usuario.
     // En modoEditaRepo, parsed.contexto es '' (vacío) y parsed.promptFinal ya contiene todo estructurado.
     const promptCompleto = `${parsed.contexto}${parsed.promptFinal}`.trim();
@@ -409,6 +500,7 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
 
     try {
         const respuestaFinal = await generarStream({
+            jobId,
             prompt: promptCompleto,
             // instruccionSistema (restricción JSON) o workspace como rol 'system'
             systemPrompt,
@@ -417,7 +509,8 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
                 ? []
                 : (historial || []),
             signal: abortController.signal,
-            onChunk: (chunk) => event.sender.send('stream-ia', chunk)
+            onChunk: (chunk) => event.sender.send('stream-ia', chunk),
+            onReconnecting: (intento) => event.sender.send('stream-reconnecting', intento)
         });
 
         // Si fue edición o creación individual
