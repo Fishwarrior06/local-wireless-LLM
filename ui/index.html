@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
@@ -483,6 +483,28 @@
   });
 
   // =========================================================================
+    // Auto‑reconnect helper – runs after the UI has been built
+  async function asegurarConexionModelo() {
+    // If we already have a configured host, nothing to do
+    if (hostConfigurado) return;
+    const t = I18N[idiomaActual];
+    try {
+      // Simple ping – try the default local address first
+      const res = await window.api.testConexionOllama('127.0.0.1:11434');
+      if (res && res.success && res.modelos?.length) {
+        hostConfigurado = res.host;
+        await window.api.guardarConfigIP({ host: res.host, model: res.modelos[0], language: idiomaActual });
+        // Re‑initialise the model selector UI
+        await inicializarModelos();
+        return;
+      }
+    } catch (e) {
+      console.warn('Auto‑reconnect test failed:', e);
+    }
+    // Fallback – ask the user to configure the host manually
+    abrirModalAjustes(t ? t.ipLabel || 'Configure your Tailscale / Ollama host' : 'Configure host');
+  }
+
   // Inicialización de Modelos y Skills
   // =========================================================================
   async function inicializarModelos() {
@@ -1628,6 +1650,28 @@
       verificarTrabajosPendientes();
     }
   }, 8000);
+
+    // Auto‑reconnect helper – runs after the UI has been built
+  async function asegurarConexionModelo() {
+    // If we already have a configured host, nothing to do
+    if (hostConfigurado) return;
+    const t = I18N[idiomaActual];
+    try {
+      // Simple ping – try the default local address first
+      const res = await window.api.testConexionOllama('127.0.0.1:11434');
+      if (res && res.success && res.modelos?.length) {
+        hostConfigurado = res.host;
+        await window.api.guardarConfigIP({ host: res.host, model: res.modelos[0], language: idiomaActual });
+        // Re‑initialise the model selector UI
+        await inicializarModelos();
+        return;
+      }
+    } catch (e) {
+      console.warn('Auto‑reconnect test failed:', e);
+    }
+    // Fallback – ask the user to configure the host manually
+    abrirModalAjustes(t ? t.ipLabel || 'Configure your Tailscale / Ollama host' : 'Configure host');
+  }
 
   // Inicialización
   aplicarTraducciones();
