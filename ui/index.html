@@ -846,69 +846,114 @@
   // =========================================================================
   function formatearMarkdownSimple(texto) {
     if (!texto) return '';
-    let out = texto;
 
-    // Extraer bloques de código primero para no procesarlos
+    // Normalizar saltos de línea
+    let out = texto.replace(/\r\n/g, '\n');
+
+    // 1. Manejar bloques de código (tanto cerrados como abiertos durante streaming)
+    // Si hay un número impar de ```, añadir temporalmente el cierre para renderizarlo
+    const conteoBackticks = (out.match(/```/g) || []).length;
+    if (conteoBackticks % 2 !== 0) {
+      out += '\n```';
+    }
+
     const bloques = [];
-    out = out.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    // Regex flexible: captura ``` seguido de cualquier identificador de lenguaje (ej: js, c++, json:file, etc.)
+    const regexBloque = /```([^\n\r`]*)\n([\s\S]*?)```/g;
+    out = out.replace(regexBloque, (_, langRaw, code) => {
       const idx = bloques.length;
-      const langLabel = lang || 'code';
-      const escaped = code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      bloques.push(`<div class="code-artifact"><div class="code-header"><span>${langLabel}</span><button class="btn-copy" onclick="copiarCodigo(this)">Copiar</button></div><pre><code>${escaped}</code></pre></div>`);
-      return `%%BLOQUE_${idx}%%`;
+      const langLimpio = (langRaw || '').trim().split(/\s+/)[0] || 'code';
+      const escaped = code
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+      const t = (typeof I18N !== 'undefined' && typeof idiomaActual !== 'undefined' && I18N[idiomaActual])
+        ? I18N[idiomaActual]
+        : { copyBtn: 'Copiar' };
+      const copyText = t.copyBtn || 'Copiar';
+
+      const htmlBloque = `<div class="code-artifact"><div class="code-header"><span>${langLimpio}</span><button class="btn-copy" onclick="copiarCodigo(this)">${copyText}</button></div><pre><code>${escaped}</code></pre></div>`;
+      bloques.push(htmlBloque);
+      return `\n\n@@CODEBLOCK${idx}@@\n\n`;
     });
 
-    // Blockquotes
+    // 2. Extraer código inline `...` antes de procesar markdown
+    const inlines = [];
+    out = out.replace(/`([^`\n]+)`/g, (_, inlineCode) => {
+      const idx = inlines.length;
+      const escapedInline = inlineCode
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      inlines.push(`<code>${escapedInline}</code>`);
+      return `@@INLINECODE${idx}@@`;
+    });
+
+    // 3. Escape de caracteres HTML en el texto restante
+    out = out
+      .replace(/&(?!amp;|lt;|gt;|quot;|#39;)/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    // 4. Blockquotes
     out = out.replace(/^&gt; ?(.+)$/gm, '<blockquote>$1</blockquote>');
     out = out.replace(/^> ?(.+)$/gm, '<blockquote>$1</blockquote>');
 
-    // Headings
+    // 5. Encabezados
     out = out.replace(/^### (.+)$/gm, '<h3>$1</h3>');
     out = out.replace(/^## (.+)$/gm, '<h2>$1</h2>');
     out = out.replace(/^# (.+)$/gm, '<h1>$1</h1>');
 
-    // HR
+    // 6. Líneas horizontales
     out = out.replace(/^---+$/gm, '<hr>');
 
-    // Bold + italic combinado
+    // 7. Negritas y cursivas
     out = out.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
-    // Bold
     out = out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    // Italic
     out = out.replace(/\*(.+?)\*/g, '<em>$1</em>');
-    // Inline code
-    out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
+    out = out.replace(/___(.+?)___/g, '<strong><em>$1</em></strong>');
+    out = out.replace(/__(.+?)__/g, '<strong>$1</strong>');
+    out = out.replace(/\b_([^_]+)_\b/g, '<em>$1</em>');
 
-    // Listas no ordenadas
+    // 8. Listas
     out = out.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
-    out = out.replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`);
-
-    // Listas ordenadas
+    out = out.replace(/(?:<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`);
     out = out.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
 
-    // URLs clickeables (que no estén ya en un tag html)
+    // 9. URLs clickeables
     out = out.replace(/(?<![="'])https?:\/\/[^\s<>"]+/g, url => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`);
 
-    // Mac callouts [Mac: text]
+    // 10. Callouts de sistema [Mac: ...]
     out = out.replace(/\[Mac: ([^\]]+)\]/g, '<div class="callout-pill" style="border-color: rgba(0,122,255,0.3)">⌘ $1</div>');
 
-    // Párrafos: separar por doble salto de línea
+    // 11. Párrafos
     const parrafos = out.split(/\n\n+/);
     out = parrafos.map(p => {
       p = p.trim();
       if (!p) return '';
-      // Si ya es un elemento de bloque, no envolver
-      if (/^<(h[1-6]|ul|ol|blockquote|div|hr|%%BLOQUE)/.test(p)) return p;
-      // Saltos simples de línea dentro del párrafo → <br>
+      if (p.includes('@@CODEBLOCK')) {
+        if (/^@@CODEBLOCK\d+@@$/.test(p)) {
+          return p;
+        }
+        return '<p>' + p.replace(/(@@CODEBLOCK\d+@@)/g, '</p>$1<p>') + '</p>';
+      }
+      if (/^<(h[1-6]|ul|ol|blockquote|div|hr)/.test(p)) return p;
       return '<p>' + p.replace(/\n/g, '<br>') + '</p>';
     }).join('\n');
 
-    // Restaurar bloques de código
-    bloques.forEach((bloque, i) => {
-      out = out.replace(`%%BLOQUE_${i}%%`, bloque);
-      // También dentro de <p> tags si quedó ahí
-      out = out.replace(`<p>%%BLOQUE_${i}%%</p>`, bloque);
+    // 12. Restaurar código inline
+    inlines.forEach((inl, i) => {
+      out = out.split(`@@INLINECODE${i}@@`).join(inl);
     });
+
+    // 13. Restaurar bloques de código
+    bloques.forEach((bloque, i) => {
+      out = out.split(`@@CODEBLOCK${i}@@`).join(bloque);
+    });
+
+    // Limpieza de cualquier etiqueta <p> vacía residual
+    out = out.replace(/<p>\s*<\/p>/g, '').trim();
 
     return out;
   }
