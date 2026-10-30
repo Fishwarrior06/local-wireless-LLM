@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, MenuItem, nativeImage, powerMonitor } from 'electron';
+import { execFile } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -198,46 +199,8 @@ app.whenReady().then(() => {
         }
     });
 
-    setDockIcon(); // Primera vez, antes de crear la ventana
-    createWindow();
 
-    // Monitoreo nativo de suspensión y reanudación de macOS (Cerrar / Abrir tapa del MacBook)
-    if (powerMonitor) {
-        powerMonitor.on('suspend', () => {
-            console.log('[PowerMonitor] macOS entrando en suspensión / sleep.');
-        });
 
-        powerMonitor.on('resume', () => {
-            console.log('[PowerMonitor] macOS reanudado tras suspensión. Esperando que Tailscale/WiFi restablezcan conexión...');
-            // Esperar 1.8 segundos a que el túnel de red WireGuard y WiFi se reconecten
-            setTimeout(() => {
-                if (mainWindow && !mainWindow.isDestroyed()) {
-                    mainWindow.webContents.send('sistema-resumed');
-                }
-            }, 1800);
-        });
-    }
-});
-    setDockIcon(); // Primera vez, antes de crear la ventana
-    createWindow();
-
-    // Monitoreo nativo de suspensión y reanudación de macOS (Cerrar / Abrir tapa del MacBook)
-    if (powerMonitor) {
-        powerMonitor.on('suspend', () => {
-            console.log('[PowerMonitor] macOS entrando en suspensión / sleep.');
-        });
-
-        powerMonitor.on('resume', () => {
-            console.log('[PowerMonitor] macOS reanudado tras suspensión. Esperando que Tailscale/WiFi restablezcan conexión...');
-            // Esperar 1.8 segundos a que el túnel de red WireGuard y WiFi se reconecten
-            setTimeout(() => {
-                if (mainWindow && !mainWindow.isDestroyed()) {
-                    mainWindow.webContents.send('sistema-resumed');
-                }
-            }, 1800);
-        });
-    }
-});
 
 /**
  * Parsea la respuesta del modelo en modo edición múltiple.

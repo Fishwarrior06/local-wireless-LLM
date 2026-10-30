@@ -2,11 +2,14 @@ import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
+
 let app = null;
 if (process.versions && process.versions.electron) {
     try {
-        const electron = await import('electron');
-        app = electron.app || electron.default?.app || null;
+        const require = createRequire(import.meta.url);
+        const electron = require('electron');
+        app = electron.app || null;
     } catch {}
 }
 
