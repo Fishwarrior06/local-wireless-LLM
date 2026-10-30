@@ -171,37 +171,6 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, 'ui', 'index.html'));
 }
 
-app.whenReady().then(() => {
-    // Register native helper IPC (macOS System Preferences shortcut)
-    const { execFile } = require('child_process');
-    ipcMain.handle('openSystemPreferences', async (event, pane) => {
-        // "pane" can be a system preferences pane identifier, e.g. "Network".
-        // macOS uses the URL scheme: x-apple.systempreferences:com.apple.preference.<pane>
-        const paneMap = {
-            Network: 'com.apple.preference.network',
-            Security: 'com.apple.preference.security',
-            Bluetooth: 'com.apple.preference.bluetooth',
-            Displays: 'com.apple.preference.displays',
-        };
-        const url = paneMap[pane] ? `x-apple.systempreferences:${paneMap[pane]}` : 'x-apple.systempreferences:';
-        try {
-            // Use the "open" command to launch System Preferences to the given pane.
-            await new Promise((resolve, reject) => {
-                execFile('open', [url], (error) => {
-                    if (error) reject(error);
-                    else resolve();
-                });
-            });
-            return { success: true };
-        } catch (e) {
-            console.error('Failed to open System Preferences:', e);
-            return { success: false, error: e.message };
-        }
-    });
-
-
-
-
 /**
  * Parsea la respuesta del modelo en modo edición múltiple.
  * Soporta JSON estricto (o dentro de bloques ```json) y fallback robusto
@@ -290,13 +259,16 @@ function parsearCambiosMultiples(texto) {
     return archivos;
 }
 
-// Detener generación activa
-ipcMain.on('detener-generacion', () => {
-    if (abortController) {
-        abortController.abort();
-        abortController = null;
-    }
-});
+app.whenReady().then(() => {
+    createWindow();
+
+    // Detener generación activa
+    ipcMain.on('detener-generacion', () => {
+        if (abortController) {
+            abortController.abort();
+            abortController = null;
+        }
+    });
 
 // Selector de carpeta para workspace de sesión
 ipcMain.handle('seleccionar-carpeta-workspace', async () => {
@@ -622,4 +594,13 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
     } finally {
         event.sender.send('fin-stream');
     }
+});
+
+    app.on('activate', () => {
+        if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+});
+
+app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
 });
