@@ -45,6 +45,12 @@
       "!**/.env*",
       "!**/*.user-config.json",
       "!dist"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/electron-sfsymbols/lib/bin/sfsymbol",
+        "to": "bin/sfsymbol"
+      }
     ]
   },
   "keywords": [
@@ -58,7 +64,8 @@
   "license": "ISC",
   "dependencies": {
     "chalk": "^5.6.2",
-    "dotenv": "^18.0.9"
+    "dotenv": "^18.0.9",
+    "electron-sfsymbols": "^1.0.0-alpha.4"
   },
   "devDependencies": {
     "electron": "^45.0.0",

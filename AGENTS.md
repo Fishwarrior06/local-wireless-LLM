@@ -28,6 +28,7 @@ local-wireless-LLM/
 │   ├── fs-tools.js             # Recorrido recursivo seguro y formateo de carpetas/repos
 │   ├── skills-loader.js        # Carga, parseo y detección contextual de skills
 │   ├── ollama.js               # Cliente HTTP stream (/api/chat), cancelación y listado de modelos
+│   ├── sf-symbols.js           # Generación dinámica de Apple SF Symbols (electron-sfsymbols)
 │   └── commands.js             # Parser de comandos y soporte de workspace dinámico
 │
 ├── ui/                         # Frontend Liquid Glass (macOS 26/27)
@@ -115,6 +116,8 @@ triggers: ["refactorizar", "clean-code", "modularizar"]
 | `job-asignado` | `event.sender.send` | Main ➔ Renderer | Emite el `jobId` único asignado para persistencia en sesión. |
 | `stream-reconnecting` | `event.sender.send` | Main ➔ Renderer | Notifica reintento automático de conexión al stream. |
 | `consultar-job-pendiente` | `ipcMain.handle` | Renderer ⇄ Main | Consulta y recupera resultados de jobs si la Mac se apagó. |
+| `obtener-sf-symbol` | `ipcMain.handle` | Renderer ⇄ Main | Genera y retorna un SF Symbol en data URL con `electron-sfsymbols`. |
+| `obtener-sf-symbols-batch` | `ipcMain.handle` | Renderer ⇄ Main | Carga por lotes los SF Symbols activos con caché y fallback SVG. |
 
 ---
 
@@ -131,3 +134,21 @@ Para evitar interrupciones de inferencia cuando la Mac se suspende, se apaga o p
    - Detecta si el daemon está disponible en el host. Si lo está, despacha los jobs de forma desacoplada con auto-reconexión y persistencia de `jobId` en sesión (`localStorage`).
    - Si la Mac se apaga a mitad de una tarea y se reenciende horas más tarde, consulta `consultar-job-pendiente` y recupera el output final completo, aplicando los cambios en disco automáticamente si fue un comando de edición (`modoEditaRepo`).
    - Si el daemon no está en ejecución, conmuta de forma transparente al modo directo con Ollama (`:11434`).
+
+---
+
+## 9. Sistema de Iconografía Nativa con Apple SF Symbols (`electron-sfsymbols`)
+
+La aplicación utiliza la librería oficial `electron-sfsymbols` respaldada por el binario nativo de macOS para generar símbolos de alta definición idénticos a los del sistema operativo Apple:
+
+### Símbolos integrados:
+- `sidebar.left`: Alternar la visibilidad de la barra lateral (Header & Menú de macOS).
+- `gearshape`: Acceso al panel modal de ajustes y configuración de red.
+- `plus`: Crear una nueva conversación y adjuntar archivos/carpetas al contexto.
+- `folder.fill`: Distintivo de workspace en el modal de selección, sidebar de sesiones y píldora superior.
+- `pencil`: Opción de renombrar conversación en el menú contextual flotante.
+- `trash`: Opción destructiva de eliminar conversación en el menú contextual flotante.
+
+### Mecanismo de Fallback y Resiliencia Multiplataforma:
+- **macOS:** Ejecuta el binario Mach-O (`bin/sfsymbol`), generando imágenes vectoriales renderizadas a través de `NativeImage` (para menús del sistema) y Data URLs en base64 para el Canvas DOM.
+- **Entornos de Desarrollo / Multiplataforma:** Dispone de un catálogo de respaldo idéntico en SVG puro en `ui/assets/*.svg` con resolución inmediata mediante caché en memoria, previniendo excepciones y garantizando fidelidad estética en cualquier plataforma.

@@ -22,5 +22,15 @@ contextBridge.exposeInMainWorld('api', {
     onJobAsignado: (callback) => ipcRenderer.on('job-asignado', (event, data) => callback(data)),
     onStreamReconnecting: (callback) => ipcRenderer.on('stream-reconnecting', (event, intento) => callback(intento)),
     onSistemaResumed: (callback) => ipcRenderer.on('sistema-resumed', () => callback()),
-    consultarJobPendiente: (datos) => ipcRenderer.invoke('consultar-job-pendiente', datos)
+    consultarJobPendiente: (datos) => ipcRenderer.invoke('consultar-job-pendiente', datos),
+
+    // Atajos y eventos del menú nativo de macOS
+    onMenuNuevaSesion: (callback) => ipcRenderer.on('nueva-sesion', () => callback()),
+    onMenuToggleSidebar: (callback) => ipcRenderer.on('toggle-sidebar', () => callback()),
+    onMenuAbrirAjustes: (callback) => ipcRenderer.on('abrir-ajustes', () => callback()),
+    onMenuAbrirWorkspace: (callback) => ipcRenderer.on('abrir-workspace-modal', () => callback()),
+
+    // SF Symbols (macOS nativo vía electron-sfsymbols con fallback SVG)
+    obtenerSfSymbol: (nombre, opciones) => ipcRenderer.invoke('obtener-sf-symbol', { nombre, opciones }),
+    obtenerSfSymbolsBatch: (nombres, opciones) => ipcRenderer.invoke('obtener-sf-symbols-batch', nombres, opciones)
 });

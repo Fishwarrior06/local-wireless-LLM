@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, MenuItem, nativeImage, powerMonitor } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage, powerMonitor } from 'electron';
 import { execFile } from 'child_process';
 import path from 'path';
 import fs from 'fs';
@@ -9,6 +9,12 @@ import { generarStream, listarModelosOllama, consultarEstadoJob, abortarJob, ver
 import { procesarInputUsuario } from './src/commands.js';
 import { obtenerSkills } from './src/skills-loader.js';
 import { leerCarpetaRecursiva, formatearContextoCarpeta } from './src/fs-tools.js';
+import {
+    obtenerSfSymbolDataUrl,
+    obtenerSfSymbolNativeImage,
+    obtenerSfSymbolNativeImageSincrono,
+    obtenerTodosLosSfSymbols
+} from './src/sf-symbols.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,6 +27,43 @@ process.title = APP_NAME;
 
 let mainWindow;
 let abortController = null;
+
+function obtenerIconoMenu(sfNombre, fallbackSvg) {
+    const cached = obtenerSfSymbolNativeImageSincrono(sfNombre, fallbackSvg);
+    if (cached && !cached.isEmpty()) return cached;
+
+    if (process.platform === 'darwin' && typeof nativeImage.createMenuSymbol === 'function') {
+        try {
+            const sym = nativeImage.createMenuSymbol(sfNombre);
+            if (sym && !sym.isEmpty()) return sym;
+        } catch {}
+    }
+    // Fallback multiplataforma cargando el SVG vectorial de ui/assets
+    if (fallbackSvg) {
+        const svgPath = path.join(__dirname, 'ui', 'assets', fallbackSvg);
+        if (fs.existsSync(svgPath)) {
+            try {
+                return nativeImage.createFromPath(svgPath).resize({ width: 16, height: 16 });
+            } catch {}
+        }
+    }
+    return undefined;
+}
+
+async function actualizarMenuMacConSfSymbols() {
+    if (process.platform !== 'darwin') return;
+    try {
+        await Promise.all([
+            obtenerSfSymbolNativeImage('plus'),
+            obtenerSfSymbolNativeImage('folder.fill'),
+            obtenerSfSymbolNativeImage('sidebar.left'),
+            obtenerSfSymbolNativeImage('gearshape')
+        ]);
+        configurarMenuMac();
+    } catch (e) {
+        console.warn('[main] Error pre-cargando SF Symbols para menú:', e.message);
+    }
+}
 
 // Configurar Menú Nativo de macOS (Para que junto a la manzana  diga "Local-LLM")
 function configurarMenuMac() {
@@ -55,43 +98,53 @@ function configurarMenuMac() {
             {
                 label: 'Archivo',
                 submenu: [
-                    new MenuItem({
-                        label: 'Nueva carpeta',
-                        icon: nativeImage.createMenuSymbol('folder.fill'),
-                        click: () => { console.log('Crear carpeta'); }
-                    }),
-                    new MenuItem({
-                        label: 'Editar',
-                        icon: nativeImage.createMenuSymbol('pencil'),
-                        click: () => { console.log('Editar acción'); }
-                    }),
-                    new MenuItem({
-                        label: 'Eliminar',
-                        icon: nativeImage.createMenuSymbol('trash'),
-                        click: () => { console.log('Eliminar acción'); }
-                    })
+                    {
+                        label: 'Nueva conversación',
+                        accelerator: 'CmdOrCtrl+N',
+                        icon: obtenerIconoMenu('plus', 'plus.svg'),
+                        click: () => {
+                            if (mainWindow && !mainWindow.isDestroyed()) {
+                                mainWindow.webContents.send('nueva-sesion');
+                            }
+                        }
+                    },
+                    { type: 'separator' },
+                    {
+                        label: 'Vincular Workspace...',
+                        accelerator: 'CmdOrCtrl+O',
+                        icon: obtenerIconoMenu('folder.fill', 'folder.svg'),
+                        click: () => {
+                            if (mainWindow && !mainWindow.isDestroyed()) {
+                                mainWindow.webContents.send('abrir-workspace-modal');
+                            }
+                        }
+                    }
                 ]
             },
             {
                 label: 'Vista',
                 submenu: [
-                    new MenuItem({
-                        label: 'Mostrar barra lateral',
-                        icon: nativeImage.createMenuSymbol('sidebar.left'),
+                    {
+                        label: 'Alternar barra lateral',
+                        accelerator: 'CmdOrCtrl+B',
+                        icon: obtenerIconoMenu('sidebar.left', 'sidebar.svg'),
                         click: () => {
                             if (mainWindow && !mainWindow.isDestroyed()) {
                                 mainWindow.webContents.send('toggle-sidebar');
                             }
                         }
-                    }),
-                    new MenuItem({
-                        label: 'Preferencias',
-                        icon: nativeImage.createMenuSymbol('gearshape'),
-                        click: async () => {
-                            const result = await ipcMain.handle('openSystemPreferences')('Network');
-                            console.log('Opened System Preferences:', result);
+                    },
+                    { type: 'separator' },
+                    {
+                        label: 'Ajustes y Red...',
+                        accelerator: 'CmdOrCtrl+,',
+                        icon: obtenerIconoMenu('gearshape', 'gear.svg'),
+                        click: () => {
+                            if (mainWindow && !mainWindow.isDestroyed()) {
+                                mainWindow.webContents.send('abrir-ajustes');
+                            }
                         }
-                    })
+                    }
                 ]
             },
             {
@@ -261,6 +314,38 @@ function parsearCambiosMultiples(texto) {
 
 app.whenReady().then(() => {
     createWindow();
+    actualizarMenuMacConSfSymbols();
+
+    // SF Symbols (macOS nativo vía electron-sfsymbols con fallback SVG)
+    ipcMain.handle('obtener-sf-symbol', async (_event, { nombre, opciones }) => {
+        try {
+            return await obtenerSfSymbolDataUrl(nombre, opciones);
+        } catch (err) {
+            console.error(`[IPC:obtener-sf-symbol] Error:`, err);
+            return null;
+        }
+    });
+
+    ipcMain.handle('obtener-sf-symbols-batch', async (_event, nombres, opciones) => {
+        try {
+            return await obtenerTodosLosSfSymbols(nombres, opciones);
+        } catch (err) {
+            console.error(`[IPC:obtener-sf-symbols-batch] Error:`, err);
+            return {};
+        }
+    });
+
+    // Monitoreo nativo de suspensión y reanudación de macOS (Cerrar / Abrir tapa del MacBook)
+    if (powerMonitor) {
+        powerMonitor.on('resume', () => {
+            console.log('[PowerMonitor] macOS reanudado tras suspensión. Esperando que Tailscale/WiFi restablezcan conexión...');
+            setTimeout(() => {
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('sistema-resumed');
+                }
+            }, 1800);
+        });
+    }
 
     // Detener generación activa
     ipcMain.on('detener-generacion', () => {
