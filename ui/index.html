@@ -954,6 +954,19 @@
     // Normalizar saltos de línea
     let out = texto.replace(/\r\n/g, '\n');
 
+    // Convertir bloques de código indentados (4 espacios o tabulación de Markdown estándar)
+    // si contienen sintaxis típica de programación/tests para asegurar su renderizado en artifact
+    out = out.replace(/(?:^(?: {4}|\t)[^\n]+(?:\n|$))+/gm, (indentedBlock) => {
+      const lineas = indentedBlock.split('\n');
+      const desindentado = lineas.map(l => l.replace(/^(?: {4}|\t)/, '')).join('\n').trim();
+      if (!desindentado) return indentedBlock;
+      const esCodigo = /\b(?:test|it|describe|expect|assert|const|let|var|function|return|import|export|class|def|async|await)\b/.test(desindentado);
+      if (esCodigo) {
+        return `\`\`\`javascript\n${desindentado}\n\`\`\`\n`;
+      }
+      return indentedBlock;
+    });
+
     // 1. Manejar bloques de código (tanto cerrados como abiertos durante streaming)
     // Si hay un número impar de ```, añadir temporalmente el cierre para renderizarlo
     const conteoBackticks = (out.match(/```/g) || []).length;
@@ -1375,7 +1388,7 @@
       return { bloque: texto.slice(0, len), restante: texto.slice(len) };
     }
 
-    // 2. Bloque de código completo (```lang ... ```\n)
+    // 2. Si el texto empieza con un bloque de código cercado (```)
     if (texto.startsWith('```')) {
       const finCodigo = texto.indexOf('```', 3);
       if (finCodigo !== -1) {
@@ -1383,19 +1396,30 @@
         if (texto[finBloque] === '\n') finBloque++;
         return { bloque: texto.slice(0, finBloque), restante: texto.slice(finBloque) };
       }
+      // Si aún no ha llegado el cierre de las comillas invertidas, NO debemos cortar
+      // por \n\n ni por oraciones dentro del código de tests. Se mantiene en espera del cierre o idle timer.
+      return { bloque: '', restante: texto };
     }
 
-    // 3. Párrafo completo delimitado por doble salto de línea (\n\n)
+    // Detectar si hay un bloque de código más adelante en el texto
+    const idxCodigo = texto.indexOf('```');
+
+    // 3. Párrafo completo delimitado por doble salto de línea (\n\n) ANTES de un bloque de código
     const idxDoble = texto.indexOf('\n\n');
-    if (idxDoble !== -1) {
+    if (idxDoble !== -1 && (idxCodigo === -1 || idxDoble < idxCodigo)) {
       const finBloque = idxDoble + 2;
       return { bloque: texto.slice(0, finBloque), restante: texto.slice(finBloque) };
     }
 
-    // 4. Si el buffer es extenso (> 160 caracteres) y contiene fin de oración
+    // Si hay un bloque de código antes de un doble salto, entregar el texto previo para que el siguiente bloque empiece con ```
+    if (idxCodigo !== -1 && (idxDoble === -1 || idxCodigo < idxDoble)) {
+      return { bloque: texto.slice(0, idxCodigo), restante: texto.slice(idxCodigo) };
+    }
+
+    // 4. Si el buffer es extenso (> 160 caracteres) y contiene fin de oración antes de cualquier código
     if (texto.length > 160) {
       const mPunto = texto.match(/[\.\?\!][\s\n]+/);
-      if (mPunto && mPunto.index !== undefined) {
+      if (mPunto && mPunto.index !== undefined && (idxCodigo === -1 || mPunto.index < idxCodigo)) {
         const finOracion = mPunto.index + mPunto[0].length;
         return { bloque: texto.slice(0, finOracion), restante: texto.slice(finOracion) };
       }
@@ -1700,6 +1724,28 @@
   // Sondeo y recuperación automática ante reconexión de red
   window.addEventListener('online', () => {
     verificarTrabajosPendientes();
+  });
+
+  // Atajos de teclado para Zoom / Escalado DPI (Cmd/Ctrl + +, Cmd/Ctrl + -, Cmd/Ctrl + 0)
+  window.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && !e.altKey) {
+      if (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd' || e.code === 'Equal') {
+        e.preventDefault();
+        if (window.api && window.api.cambiarZoom) {
+          window.api.cambiarZoom(0.1);
+        }
+      } else if (e.key === '-' || e.code === 'NumpadSubtract' || e.code === 'Minus') {
+        e.preventDefault();
+        if (window.api && window.api.cambiarZoom) {
+          window.api.cambiarZoom(-0.1);
+        }
+      } else if (e.key === '0' || e.code === 'Numpad0' || e.code === 'Digit0') {
+        e.preventDefault();
+        if (window.api && window.api.resetearZoom) {
+          window.api.resetearZoom();
+        }
+      }
+    }
   });
 
   // Si hay algún trabajo pendiente en segundo plano, consultar periódicamente

@@ -118,6 +118,9 @@ triggers: ["refactorizar", "clean-code", "modularizar"]
 | `consultar-job-pendiente` | `ipcMain.handle` | Renderer ⇄ Main | Consulta y recupera resultados de jobs si la Mac se apagó. |
 | `obtener-sf-symbol` | `ipcMain.handle` | Renderer ⇄ Main | Genera y retorna un SF Symbol en data URL con `electron-sfsymbols`. |
 | `obtener-sf-symbols-batch` | `ipcMain.handle` | Renderer ⇄ Main | Carga por lotes los SF Symbols activos con caché y fallback SVG. |
+| `obtener-zoom` | `ipcMain.handle` | Renderer ⇄ Main | Consulta el nivel de zoom / factor DPI actual. |
+| `cambiar-zoom` | `ipcMain.on` | Renderer ➔ Main | Incrementa o reduce el zoom (`delta` ±0.1) y lo persiste. |
+| `resetear-zoom` | `ipcMain.on` | Renderer ➔ Main | Restablece el zoom al 100% (factor 1.0). |
 
 ---
 
@@ -152,3 +155,12 @@ La aplicación utiliza la librería oficial `electron-sfsymbols` respaldada por 
 ### Mecanismo de Fallback y Resiliencia Multiplataforma:
 - **macOS:** Ejecuta el binario Mach-O (`bin/sfsymbol`), generando imágenes vectoriales renderizadas a través de `NativeImage` (para menús del sistema) y Data URLs en base64 para el Canvas DOM.
 - **Entornos de Desarrollo / Multiplataforma:** Dispone de un catálogo de respaldo idéntico en SVG puro en `ui/assets/*.svg` con resolución inmediata mediante caché en memoria, previniendo excepciones y garantizando fidelidad estética en cualquier plataforma.
+
+---
+
+## 10. Escalado Dinámico de Interfaz y Control de DPI / Zoom
+
+La aplicación soporta ajuste dinámico de tamaño y resolución visual:
+- **Atajos de teclado:** `Cmd/Ctrl + +` o `Cmd/Ctrl + =` para acercar (+10%), `Cmd/Ctrl + -` para alejar (-10%), y `Cmd/Ctrl + 0` para restablecer al 100%.
+- **Menú de macOS:** Acciones bajo el menú `Vista` para *Acercar (Aumentar tamaño)*, *Alejar (Reducir tamaño)* y *Tamaño original (100%)*.
+- **Persistencia de Zoom:** El factor de zoom configurado se almacena en `config.json` (`userData`) y se aplica automáticamente en cada inicio de la app.

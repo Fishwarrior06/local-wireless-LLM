@@ -58,10 +58,11 @@ export const config = {
     ollamaHost: configGuardada.ollamaHost || (esProduccionEmpaquetada ? '' : process.env.OLLAMA_HOST || ''),
     currentModel: configGuardada.currentModel || (esProduccionEmpaquetada ? '' : process.env.OLLAMA_MODEL || ''),
     language: configGuardada.language || 'es',
+    zoomFactor: typeof configGuardada.zoomFactor === 'number' ? configGuardada.zoomFactor : 1.0,
     projectRoot: PROJECT_ROOT,
     skillsDir: path.join(PROJECT_ROOT, 'skills'),
 
-    guardarConfig({ host, model, language, useDaemon }) {
+    guardarConfig({ host, model, language, useDaemon, zoomFactor }) {
         if (host !== undefined) {
             let cleanHost = host.trim().replace(/^https?:\/\//i, '').replace(/\/$/, '');
             if (!cleanHost.includes(':')) {
@@ -78,6 +79,9 @@ export const config = {
         if (useDaemon !== undefined) {
             this.useDaemon = !!useDaemon;
         }
+        if (zoomFactor !== undefined) {
+            this.zoomFactor = Math.max(0.6, Math.min(2.5, Math.round(zoomFactor * 100) / 100));
+        }
         try {
             const dir = path.dirname(CONFIG_PATH);
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -89,6 +93,7 @@ export const config = {
                         currentModel: this.currentModel,
                         language: this.language,
                         useDaemon: this.useDaemon,
+                        zoomFactor: this.zoomFactor,
                     },
                     null,
                     2
@@ -98,6 +103,10 @@ export const config = {
         } catch (e) {
             console.error('[Config] Error guardando config persistente:', e.message);
         }
+    },
+
+    guardarZoom(factor) {
+        this.guardarConfig({ zoomFactor: factor });
     },
 
     setModel(newModel) {

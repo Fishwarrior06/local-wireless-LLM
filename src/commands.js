@@ -135,6 +135,10 @@ export function procesarInputUsuario(input, workspacePath = null) {
         skillAplicada = infoSkill.skill;
         contexto += `[DIRECTRICES DE LA SKILL '${skillAplicada.nombre.toUpperCase()}']:\n${skillAplicada.instrucciones}\n\n`;
         
+        if (skillAplicada.nombre === 'testear') {
+            contexto += `[FORMATO OBLIGATORIO]: Genera siempre todo el código de las pruebas dentro de bloques de código Markdown (\`\`\`lenguaje\\n...\\n\`\`\`). Nunca devuelvas código en texto plano.\n\n`;
+        }
+
         // Si fue invocado como /refactorizar <texto> o /skill <nombre> <texto>, extraer la instrucción
         if (infoSkill.resto) {
             promptFinal = infoSkill.resto;

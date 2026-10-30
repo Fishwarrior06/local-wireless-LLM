@@ -32,5 +32,10 @@ contextBridge.exposeInMainWorld('api', {
 
     // SF Symbols (macOS nativo vía electron-sfsymbols con fallback SVG)
     obtenerSfSymbol: (nombre, opciones) => ipcRenderer.invoke('obtener-sf-symbol', { nombre, opciones }),
-    obtenerSfSymbolsBatch: (nombres, opciones) => ipcRenderer.invoke('obtener-sf-symbols-batch', nombres, opciones)
+    obtenerSfSymbolsBatch: (nombres, opciones) => ipcRenderer.invoke('obtener-sf-symbols-batch', nombres, opciones),
+
+    // Gestión de Zoom / DPI
+    cambiarZoom: (delta) => ipcRenderer.send('cambiar-zoom', delta),
+    resetearZoom: () => ipcRenderer.send('resetear-zoom'),
+    obtenerZoom: () => ipcRenderer.invoke('obtener-zoom')
 });

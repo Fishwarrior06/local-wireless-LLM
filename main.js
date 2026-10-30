@@ -28,6 +28,23 @@ process.title = APP_NAME;
 let mainWindow;
 let abortController = null;
 
+function aplicarZoom(factor) {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const nuevo = Math.max(0.6, Math.min(2.5, Math.round(factor * 100) / 100));
+    mainWindow.webContents.setZoomFactor(nuevo);
+    config.guardarZoom(nuevo);
+}
+
+function cambiarZoom(delta) {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const actual = mainWindow.webContents.getZoomFactor() || 1.0;
+    aplicarZoom(actual + delta);
+}
+
+function resetearZoom() {
+    aplicarZoom(1.0);
+}
+
 function obtenerIconoMenu(sfNombre, fallbackSvg) {
     const cached = obtenerSfSymbolNativeImageSincrono(sfNombre, fallbackSvg);
     if (cached && !cached.isEmpty()) return cached;
@@ -144,6 +161,22 @@ function configurarMenuMac() {
                                 mainWindow.webContents.send('abrir-ajustes');
                             }
                         }
+                    },
+                    { type: 'separator' },
+                    {
+                        label: 'Acercar (Aumentar tamaño)',
+                        accelerator: 'CmdOrCtrl+=',
+                        click: () => cambiarZoom(0.1)
+                    },
+                    {
+                        label: 'Alejar (Reducir tamaño)',
+                        accelerator: 'CmdOrCtrl+-',
+                        click: () => cambiarZoom(-0.1)
+                    },
+                    {
+                        label: 'Tamaño original (100%)',
+                        accelerator: 'CmdOrCtrl+0',
+                        click: () => resetearZoom()
                     }
                 ]
             },
@@ -209,6 +242,42 @@ function createWindow() {
             input.key === 'F12'
         ) {
             event.preventDefault();
+            return;
+        }
+
+        // Atajos de Zoom / DPI: Cmd/Ctrl + (+/=), Cmd/Ctrl + (-), Cmd/Ctrl + 0
+        const isCmdOrCtrl = input.meta || input.control;
+        if (isCmdOrCtrl && input.type === 'keyDown') {
+            if (
+                input.key === '+' ||
+                input.key === '=' ||
+                input.code === 'NumpadAdd' ||
+                input.code === 'Equal'
+            ) {
+                event.preventDefault();
+                cambiarZoom(0.1);
+            } else if (
+                input.key === '-' ||
+                input.code === 'NumpadSubtract' ||
+                input.code === 'Minus'
+            ) {
+                event.preventDefault();
+                cambiarZoom(-0.1);
+            } else if (
+                input.key === '0' ||
+                input.code === 'Numpad0' ||
+                input.code === 'Digit0'
+            ) {
+                event.preventDefault();
+                resetearZoom();
+            }
+        }
+    });
+
+    // Restaurar factor de zoom / DPI guardado
+    mainWindow.webContents.on('did-finish-load', () => {
+        if (config.zoomFactor && config.zoomFactor !== 1.0) {
+            mainWindow.webContents.setZoomFactor(config.zoomFactor);
         }
     });
 
@@ -315,6 +384,21 @@ function parsearCambiosMultiples(texto) {
 app.whenReady().then(() => {
     createWindow();
     actualizarMenuMacConSfSymbols();
+
+    // Control de Zoom / DPI
+    ipcMain.handle('obtener-zoom', () => {
+        return (mainWindow && !mainWindow.isDestroyed())
+            ? mainWindow.webContents.getZoomFactor()
+            : config.zoomFactor;
+    });
+
+    ipcMain.on('cambiar-zoom', (_event, delta) => {
+        cambiarZoom(delta);
+    });
+
+    ipcMain.on('resetear-zoom', () => {
+        resetearZoom();
+    });
 
     // SF Symbols (macOS nativo vía electron-sfsymbols con fallback SVG)
     ipcMain.handle('obtener-sf-symbol', async (_event, { nombre, opciones }) => {
