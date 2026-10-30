@@ -1252,6 +1252,16 @@ textarea#prompt::placeholder {
   color: var(--text-primary);
 }
 
+/* Icon helper – SVGs inherit button colour and size */
+.icon {
+  width: 1em;
+  height: 1em;
+  display: block;
+  color: currentColor;   /* inherit text colour (including hover) */
+  fill: currentColor;    /* for filled SVGs */
+  flex-shrink: 0;
+}
+
 /* ==========================================================================
    Markdown Rendering — Liquid Glass Typography
    ========================================================================== */

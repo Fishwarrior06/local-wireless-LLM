@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage, powerMonitor } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, MenuItem, nativeImage, powerMonitor } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -49,6 +49,48 @@ function configurarMenuMac() {
                     { role: 'copy', label: 'Copiar' },
                     { role: 'paste', label: 'Pegar' },
                     { role: 'selectAll', label: 'Seleccionar todo' }
+                ]
+            },
+            {
+                label: 'Archivo',
+                submenu: [
+                    new MenuItem({
+                        label: 'Nueva carpeta',
+                        icon: nativeImage.createMenuSymbol('folder.fill'),
+                        click: () => { console.log('Crear carpeta'); }
+                    }),
+                    new MenuItem({
+                        label: 'Editar',
+                        icon: nativeImage.createMenuSymbol('pencil'),
+                        click: () => { console.log('Editar acción'); }
+                    }),
+                    new MenuItem({
+                        label: 'Eliminar',
+                        icon: nativeImage.createMenuSymbol('trash'),
+                        click: () => { console.log('Eliminar acción'); }
+                    })
+                ]
+            },
+            {
+                label: 'Vista',
+                submenu: [
+                    new MenuItem({
+                        label: 'Mostrar barra lateral',
+                        icon: nativeImage.createMenuSymbol('sidebar.left'),
+                        click: () => {
+                            if (mainWindow && !mainWindow.isDestroyed()) {
+                                mainWindow.webContents.send('toggle-sidebar');
+                            }
+                        }
+                    }),
+                    new MenuItem({
+                        label: 'Preferencias',
+                        icon: nativeImage.createMenuSymbol('gearshape'),
+                        click: async () => {
+                            const result = await ipcMain.handle('openSystemPreferences')('Network');
+                            console.log('Opened System Preferences:', result);
+                        }
+                    })
                 ]
             },
             {
@@ -129,6 +171,53 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+    // Register native helper IPC (macOS System Preferences shortcut)
+    const { execFile } = require('child_process');
+    ipcMain.handle('openSystemPreferences', async (event, pane) => {
+        // "pane" can be a system preferences pane identifier, e.g. "Network".
+        // macOS uses the URL scheme: x-apple.systempreferences:com.apple.preference.<pane>
+        const paneMap = {
+            Network: 'com.apple.preference.network',
+            Security: 'com.apple.preference.security',
+            Bluetooth: 'com.apple.preference.bluetooth',
+            Displays: 'com.apple.preference.displays',
+        };
+        const url = paneMap[pane] ? `x-apple.systempreferences:${paneMap[pane]}` : 'x-apple.systempreferences:';
+        try {
+            // Use the "open" command to launch System Preferences to the given pane.
+            await new Promise((resolve, reject) => {
+                execFile('open', [url], (error) => {
+                    if (error) reject(error);
+                    else resolve();
+                });
+            });
+            return { success: true };
+        } catch (e) {
+            console.error('Failed to open System Preferences:', e);
+            return { success: false, error: e.message };
+        }
+    });
+
+    setDockIcon(); // Primera vez, antes de crear la ventana
+    createWindow();
+
+    // Monitoreo nativo de suspensión y reanudación de macOS (Cerrar / Abrir tapa del MacBook)
+    if (powerMonitor) {
+        powerMonitor.on('suspend', () => {
+            console.log('[PowerMonitor] macOS entrando en suspensión / sleep.');
+        });
+
+        powerMonitor.on('resume', () => {
+            console.log('[PowerMonitor] macOS reanudado tras suspensión. Esperando que Tailscale/WiFi restablezcan conexión...');
+            // Esperar 1.8 segundos a que el túnel de red WireGuard y WiFi se reconecten
+            setTimeout(() => {
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('sistema-resumed');
+                }
+            }, 1800);
+        });
+    }
+});
     setDockIcon(); // Primera vez, antes de crear la ventana
     createWindow();
 
