@@ -83,7 +83,8 @@ async function procesarInferenciaOllama(job, { model, prompt, systemPrompt = '',
             body: JSON.stringify({
                 model,
                 messages,
-                stream: true
+                stream: true,
+                keep_alive: -1
             }),
             signal: job.abortController.signal
         });

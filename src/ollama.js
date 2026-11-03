@@ -238,7 +238,8 @@ async function generarStreamDirectoOllama({ prompt, systemPrompt = '', historial
         body: JSON.stringify({
             model: modeloUso,
             messages,
-            stream: true
+            stream: true,
+            keep_alive: -1 // Mantiene el modelo permanentemente en VRAM sin descargarse (no se va a mimir)
         }),
         signal
     });
@@ -268,8 +269,9 @@ async function generarStreamDirectoOllama({ prompt, systemPrompt = '', historial
 }
 
 /**
- * Entrada principal: detecta automáticamente si el daemon está disponible
- * para usar la cola asíncrona resiliente con reconexión; de lo contrario usa Ollama directo.
+ * Entrada principal: Conexión directa y nativa a Ollama sin intermediarios.
+ * Pasa keep_alive: -1 para mantener el modelo caliente en la VRAM de la GPU.
+ * Opcionalmente soporta daemon desacoplado si la variable USAR_DAEMON está activa.
  */
 export async function generarStream({
     prompt,
@@ -281,24 +283,27 @@ export async function generarStream({
     jobId = null,
     onReconnecting = null
 }) {
-    const idFinal = jobId || `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const daemonDisponible = await verificarDaemonDisponible();
-
-    if (daemonDisponible) {
-        console.log(`[Stream] Usando daemon asíncrono desacoplado en puerto ${DAEMON_PORT} (Job: ${idFinal})`);
-        return await generarStreamConDaemon({
-            jobId: idFinal,
-            prompt,
-            systemPrompt,
-            historial,
-            signal,
-            onChunk,
-            model,
-            onReconnecting
-        });
+    // Si el usuario configuró explícitamente el uso de daemon asíncrono
+    if (process.env.USAR_DAEMON === 'true') {
+        const idFinal = jobId || `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const daemonDisponible = await verificarDaemonDisponible();
+        if (daemonDisponible) {
+            console.log(`[Stream] Usando daemon asíncrono en puerto ${DAEMON_PORT} (Job: ${idFinal})`);
+            return await generarStreamConDaemon({
+                jobId: idFinal,
+                prompt,
+                systemPrompt,
+                historial,
+                signal,
+                onChunk,
+                model,
+                onReconnecting
+            });
+        }
     }
 
-    console.log(`[Stream] Daemon no detectado. Usando conexión directa a Ollama (${config.ollamaHost})`);
+    // Por defecto: Conexión directa pura contra Ollama (puerto 11434)
+    console.log(`[Stream] Conexión directa pura a Ollama (${config.ollamaHost}) con keep_alive=-1`);
     return await generarStreamDirectoOllama({
         prompt,
         systemPrompt,

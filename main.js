@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage, powerMonitor } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage, powerMonitor, powerSaveBlocker } from 'electron';
 import { execFile } from 'child_process';
 import path from 'path';
 import fs from 'fs';
@@ -27,6 +27,32 @@ process.title = APP_NAME;
 
 let mainWindow;
 let abortController = null;
+let powerBlockerId = null;
+
+function activarBloqueoSuspension() {
+    if (powerBlockerId === null || !powerSaveBlocker.isStarted(powerBlockerId)) {
+        try {
+            powerBlockerId = powerSaveBlocker.start('prevent-app-suspension');
+            console.log(`[PowerSave] Suspensión de macOS prevenida durante inferencia (Blocker ID: ${powerBlockerId}).`);
+        } catch (e) {
+            console.warn('[PowerSave] No se pudo activar powerSaveBlocker:', e.message);
+        }
+    }
+}
+
+function desactivarBloqueoSuspension() {
+    if (powerBlockerId !== null) {
+        try {
+            if (powerSaveBlocker.isStarted(powerBlockerId)) {
+                powerSaveBlocker.stop(powerBlockerId);
+                console.log(`[PowerSave] Bloqueo de suspensión liberado (Blocker ID: ${powerBlockerId}).`);
+            }
+        } catch (e) {
+            console.warn('[PowerSave] Error deteniendo powerSaveBlocker:', e.message);
+        }
+        powerBlockerId = null;
+    }
+}
 
 function aplicarZoom(factor) {
     if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -437,6 +463,7 @@ app.whenReady().then(() => {
             abortController.abort();
             abortController = null;
         }
+        desactivarBloqueoSuspension();
     });
 
 // Selector de carpeta para workspace de sesión
@@ -690,6 +717,7 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
     // En modoEditaRepo, parsed.contexto es '' (vacío) y parsed.promptFinal ya contiene todo estructurado.
     const promptCompleto = `${parsed.contexto}${parsed.promptFinal}`.trim();
     abortController = new AbortController();
+    activarBloqueoSuspension();
 
     try {
         const respuestaFinal = await generarStream({
@@ -761,6 +789,7 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
             event.sender.send('stream-ia', `\n[Error]: ${err.message}`);
         }
     } finally {
+        desactivarBloqueoSuspension();
         event.sender.send('fin-stream');
     }
 });
@@ -770,6 +799,11 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
     });
 });
 
+app.on('will-quit', () => {
+    desactivarBloqueoSuspension();
+});
+
 app.on('window-all-closed', () => {
+    desactivarBloqueoSuspension();
     if (process.platform !== 'darwin') app.quit();
 });

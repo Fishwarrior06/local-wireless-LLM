@@ -124,19 +124,18 @@ triggers: ["refactorizar", "clean-code", "modularizar"]
 
 ---
 
-## 8. Arquitectura Híbrida Asíncrona (Resiliencia ante Desconexión o Apagado)
+## 8. Conexión Directa Resiliente (Sin Servicios Extra) & Control de VRAM
 
-Para evitar interrupciones de inferencia cuando la Mac se suspende, se apaga o pierde conectividad con la red Tailscale/WiFi:
+El sistema opera mediante una conexión directa y limpia entre la Mac y Ollama (`:11434`), eliminando la necesidad de levantar daemons o servicios secundarios en la máquina host:
 
-1. **Daemon en el Host (`server-daemon.js`, puerto 11435)**:
-   - Se ejecuta en la máquina con GPU junto a Ollama.
-   - Recibe solicitudes vía `POST /api/jobs`, generando un `jobId` y procesando la inferencia localmente contra Ollama (`127.0.0.1:11434`).
-   - Los tokens se acumulan en memoria de forma desacoplada. Si el socket con la Mac se interrumpe, **la GPU no se detiene** y completa la respuesta.
-   - Ofrece streaming Server-Sent Events (`GET /api/jobs/:id/stream?offset=N`) para reconexión fluida desde el último token recibido.
-2. **Cliente Mac Inteligente**:
-   - Detecta si el daemon está disponible en el host. Si lo está, despacha los jobs de forma desacoplada con auto-reconexión y persistencia de `jobId` en sesión (`localStorage`).
-   - Si la Mac se apaga a mitad de una tarea y se reenciende horas más tarde, consulta `consultar-job-pendiente` y recupera el output final completo, aplicando los cambios en disco automáticamente si fue un comando de edición (`modoEditaRepo`).
-   - Si el daemon no está en ejecución, conmuta de forma transparente al modo directo con Ollama (`:11434`).
+1. **Persistencia Permanente en VRAM (`keep_alive: -1`):**
+   - Por defecto, Ollama descarga los modelos de la GPU tras 5 minutos de inactividad ("se va a mimir").
+   - Todas las llamadas a `/api/chat` inyectan de forma nativa `"keep_alive": -1`. El modelo permanece cargado al 100% en la VRAM de la máquina anfitriona indefinidamente, respondiendo al primer token de forma instantánea sin latencia de recarga en frío.
+2. **Prevención Activa de Suspensión en macOS (`powerSaveBlocker`):**
+   - Durante la generación de respuestas o procesamiento de repositorios (`edita-repo`), Electron invoca `powerSaveBlocker.start('prevent-app-suspension')`.
+   - La pantalla de la Mac puede apagarse o reposar para ahorrar batería, pero el sistema operativo mantiene la CPU, la tarjeta WiFi y la conexión de red activas hasta que el stream finaliza (`fin-stream`), liberando el bloqueo de inmediato.
+3. **Daemon Opcional Desacoplado (`server-daemon.js`, puerto 11435):**
+   - Para entornos desatendidos donde se requiera expresamente apagar la Mac a mitad de la inferencia, existe un daemon desacoplado opcional activable mediante la variable de entorno `USAR_DAEMON=true`. En el uso habitual, el cliente conmuta de forma directa y limpia al puerto estándar de Ollama sin dependencias intermedias.
 
 ---
 
