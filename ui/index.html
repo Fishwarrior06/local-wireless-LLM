@@ -132,7 +132,7 @@
     <div class="modal-dialog">
       <div class="modal-header">
         <div class="modal-title">
-          <img src="assets/folder.svg" data-sf="folder.fill" class="icon" alt="Workspace" style="width:16px;height:16px;opacity:0.9;">
+          <img src="assets/folder.svg" data-sf="folder.fill" class="icon" alt="Workspace" style="width:19px;height:19px;opacity:0.9;">
           <span data-i18n="workspaceModalTitle">Elige tu Workspace</span>
         </div>
         <button id="btn-cerrar-modal-workspace" class="btn-icon-subtle" title="Cerrar">✕</button>
@@ -699,7 +699,7 @@
 
     // Botón Renombrar
     const btnRename = document.createElement('button');
-    btnRename.innerHTML = `<img src="${getSymbolUrl('pencil', 'assets/pencil.svg')}" class="icon" style="width:13px;height:13px;opacity:0.8;margin-right:8px;vertical-align:-1px;"> Renombrar`;
+    btnRename.innerHTML = `<img src="${getSymbolUrl('pencil', 'assets/pencil.svg')}" class="icon" style="width:15px;height:15px;opacity:0.85;margin-right:8px;vertical-align:-1px;"> Renombrar`;
     btnRename.onclick = (ev) => {
       ev.stopPropagation();
       cerrarContextMenu();
@@ -713,7 +713,7 @@
     // Botón Eliminar
     const btnDelete = document.createElement('button');
     btnDelete.className = 'danger';
-    btnDelete.innerHTML = `<img src="${getSymbolUrl('trash', 'assets/trash.svg')}" class="icon" style="width:13px;height:13px;opacity:0.8;margin-right:8px;vertical-align:-1px;"> Eliminar`;
+    btnDelete.innerHTML = `<img src="${getSymbolUrl('trash', 'assets/trash.svg')}" class="icon" style="width:15px;height:15px;opacity:0.85;margin-right:8px;vertical-align:-1px;"> Eliminar`;
     btnDelete.onclick = (ev) => {
       ev.stopPropagation();
       cerrarContextMenu();
@@ -791,7 +791,7 @@
         folderBadge.src = getSymbolUrl('folder.fill', 'assets/folder.svg');
         folderBadge.className = 'icon';
         folderBadge.title = sesion.carpeta;
-        folderBadge.style.cssText = 'width:12px;height:12px;opacity:0.65;flex-shrink:0;margin-left:6px;vertical-align:middle;';
+        folderBadge.style.cssText = 'width:14px;height:14px;opacity:0.75;flex-shrink:0;margin-left:6px;vertical-align:middle;';
         folderBadge.alt = 'Workspace';
         div.appendChild(folderBadge);
       }
@@ -817,7 +817,7 @@
         font-size:11px;color:rgba(255,255,255,0.8);
         font-family:var(--font-mono);
         max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-      " title="${sesionActual.carpeta}"><img src="${getSymbolUrl('folder.fill', 'assets/folder.svg')}" class="icon" style="width:12px;height:12px;opacity:0.8;" alt=""> ${folderName}</span>`;
+      " title="${sesionActual.carpeta}"><img src="${getSymbolUrl('folder.fill', 'assets/folder.svg')}" class="icon" style="width:14px;height:14px;opacity:0.85;" alt=""> ${folderName}</span>`;
       indicator.style.display = 'inline-flex';
     } else {
       indicator.style.display = 'none';

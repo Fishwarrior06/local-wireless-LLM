@@ -120,13 +120,13 @@ body {
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
+  font-size: 17px;
   transition: background 0.15s, color 0.15s;
 }
 
@@ -317,13 +317,13 @@ body {
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
+  font-size: 17.5px;
   -webkit-app-region: no-drag !important;
   pointer-events: auto;
   transition: background 0.15s, color 0.15s, transform 0.1s;
@@ -718,7 +718,7 @@ select#select-modelo option {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 17px;
+  font-size: 19.5px;
   margin-bottom: 3px;
   flex-shrink: 0;
   transition: background 0.15s, color 0.15s, transform 0.15s var(--ease-apple);
@@ -1226,10 +1226,10 @@ textarea#prompt::placeholder {
   background: transparent;
   border: none;
   color: var(--text-secondary);
-  font-size: 15px;
+  font-size: 17px;
   cursor: pointer;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 6px;
   display: flex;
   align-items: center;

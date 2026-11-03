@@ -76,7 +76,7 @@ export async function obtenerSfSymbolDataUrl(nombre, opciones = {}) {
                 try { fs.chmodSync(bin, 0o755); } catch {}
 
                 const defaultOpts = {
-                    size: 22,
+                    size: 24,
                     scale: 2,
                     weight: 'medium',
                     mode: 'monochrome',
