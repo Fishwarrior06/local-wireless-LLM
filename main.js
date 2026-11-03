@@ -28,6 +28,7 @@ process.title = APP_NAME;
 let mainWindow;
 let abortController = null;
 let powerBlockerId = null;
+let caffeinateProcess = null;
 
 function activarBloqueoSuspension() {
     if (powerBlockerId === null || !powerSaveBlocker.isStarted(powerBlockerId)) {
@@ -36,6 +37,19 @@ function activarBloqueoSuspension() {
             console.log(`[PowerSave] Suspensión de macOS prevenida durante inferencia (Blocker ID: ${powerBlockerId}).`);
         } catch (e) {
             console.warn('[PowerSave] No se pudo activar powerSaveBlocker:', e.message);
+        }
+    }
+
+    // Refuerzo nativo con caffeinate en macOS: impide reposo de CPU, disco y red
+    if (process.platform === 'darwin' && !caffeinateProcess) {
+        try {
+            // -i: prevent idle sleep, -m: prevent disk idle sleep, -s: prevent system sleep on AC
+            caffeinateProcess = execFile('caffeinate', ['-dims'], (err) => {
+                if (err && !caffeinateProcess) return; // Terminado intencionalmente
+            });
+            console.log('[PowerSave] Proceso caffeinate activo en macOS.');
+        } catch (err) {
+            console.warn('[PowerSave] No se pudo iniciar caffeinate:', err.message);
         }
     }
 }
@@ -51,6 +65,14 @@ function desactivarBloqueoSuspension() {
             console.warn('[PowerSave] Error deteniendo powerSaveBlocker:', e.message);
         }
         powerBlockerId = null;
+    }
+
+    if (caffeinateProcess) {
+        try {
+            caffeinateProcess.kill('SIGTERM');
+            console.log('[PowerSave] Proceso caffeinate terminado.');
+        } catch {}
+        caffeinateProcess = null;
     }
 }
 
