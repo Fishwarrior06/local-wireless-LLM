@@ -677,7 +677,7 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
     if (parsed.instruccionSistema) {
         // Modo agente autónomo: la instrucción JSON forzada tiene prioridad absoluta como system role
         systemPrompt = parsed.instruccionSistema;
-    } else if (carpeta && !parsed.modoEdicion && !parsed.modoCreacion && !parsed.modoEditaRepo) {
+    } else if (carpeta) {
         try {
             const { archivos, totalBytes, limitAlcanzado } = leerCarpetaRecursiva(carpeta);
             if (archivos.length > 0) {
@@ -687,14 +687,14 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
                     archivos.map(a => `- ${a.ruta}`).join('\n') + '\n';
 
                 const esConversacionNueva = historial.filter(m => m.texto?.trim()).length === 0;
-                const tieneContextoComando = parsed.workspaceYaCargado || parsed.contexto.includes('=== CONTENIDO DE:');
+                const tieneContextoComando = parsed.workspaceYaCargado || parsed.contexto.includes('=== CONTENIDO DE:') || parsed.contexto.includes('=== ARCHIVO DE REFERENCIA');
 
-                if (!tieneContextoComando && esConversacionNueva) {
+                if (!tieneContextoComando && esConversacionNueva && !parsed.modoCreacion && !parsed.modoEdicion) {
                     // Primer turno sin comando explícito: enviar el repo completo como 'system'
                     const { resumen } = formatearContextoCarpeta(carpeta, archivos, totalBytes, limitAlcanzado);
                     systemPrompt = resumen;
                 } else {
-                    // Turnos siguientes o si commands.js ya tiene el contexto: solo mapa
+                    // Turnos siguientes o en modo creación/referencia: pasar el mapa estructural completo
                     systemPrompt = mapEstructura;
                 }
             }
@@ -740,7 +740,13 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
             if (!fs.existsSync(dir)) {
                 fs.mkdirSync(dir, { recursive: true });
             }
-            fs.writeFileSync(parsed.archivoDestino, respuestaFinal.trim(), 'utf-8');
+            let textoAGuardar = respuestaFinal.trim();
+            // Si el modelo devolvió todo envuelto en un único bloque de código markdown/texto, desenvolverlo para el archivo
+            const matchBloqueUnico = textoAGuardar.match(/^```(?:[a-zA-Z0-9_-]+)?\r?\n([\s\S]*?)\r?\n```$/);
+            if (matchBloqueUnico) {
+                textoAGuardar = matchBloqueUnico[1].trim();
+            }
+            fs.writeFileSync(parsed.archivoDestino, textoAGuardar, 'utf-8');
             const verbo = parsed.modoCreacion ? 'Creado' : 'Guardado';
             event.sender.send('stream-ia', `\n\n✅ [${verbo} en ${parsed.archivoDestino}]`);
         }

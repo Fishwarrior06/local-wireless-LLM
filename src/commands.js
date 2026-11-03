@@ -102,17 +102,34 @@ function extraerIntencionCrearCarpeta(texto) {
 }
 
 /**
+ * Extrae si el usuario quiere crear o generar un archivo específico.
+ * Ejemplos:
+ *   - "crea un nuevo AGENT.md basado en este archivo" -> "AGENT.md"
+ *   - "crea el archivo AGENT.md" -> "AGENT.md"
+ *   - "genera un AGENT.md para este repo" -> "AGENT.md"
+ *   - "escribe un README.md" -> "README.md"
+ *   - "crea src/index.js con la api" -> "src/index.js"
+ */
+function extraerIntencionArchivoIndividual(texto) {
+    if (!texto) return null;
+    const m = texto.match(/\b(?:crea|crear|genera|generar|haz|hacer|escribe|escribir|create|generate|write|make|new)\s+(?:un\s+|una\s+|el\s+|la\s+|new\s+|the\s+|a\s+)?(?:nuevo\s+|nueva\s+)?(?:archivo\s+|fichero\s+|file\s+)?(["']?[a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+["']?)/i);
+    if (!m) return null;
+    const candidata = m[1].replace(/["']/g, '').trim();
+    const ignorar = ['node_modules', '.git', 'dist', 'build'];
+    if (ignorar.some(ig => candidata.toLowerCase().includes(ig))) return null;
+    if (/\.[a-zA-Z0-9]{1,8}$/.test(candidata)) {
+        return candidata;
+    }
+    return null;
+}
+
+/**
  * Detecta si el texto en lenguaje natural expresa intención de escribir/crear/modificar código en el workspace.
  * Soporta tanto español como inglés (create, update, edit, modify, change, add, write, etc.).
  */
 function detectarIntencionEdicionAutonoma(texto) {
     if (!texto) return false;
     const regexAccion = /\b(?:crea|crear|genera|generar|agrega|agregar|añade|añadir|haz|hacer|escribe|escribir|modifica|modificar|edita|editar|actualiza|actualizar|corrige|corregir|implementa|implementar|create|creating|make|making|add|adding|write|writing|generate|generating|modify|modifying|edit|editing|update|updating|change|changing|fix|fixing|refactor|refactoring|implement|implementing)\b/i;
-    // Nota: "carpeta/folder/directorio" están EXCLUIDOS intencionalmente.
-    // Si estuvieran, "crea la carpeta X" dispararía modoEditaRepo en lugar de crearCarpetaDirecta.
-    // Cuando el usuario pide carpeta + archivos/tests, palabras como "test/code/archivo"
-    // activan tieneIntencionEdicion igualmente — y modoEditaRepo crea las carpetas intermedias
-    // automáticamente con mkdirSync({ recursive: true }) al escribir cada archivo.
     const regexObjetivo = /\b(?:archivo|archivos|fichero|ficheros|test|tests|testing|prueba|pruebas|unit\s*tests?|código|codigo|code|función|funcion|function|functions|método|metodo|method|methods|clase|class|classes|módulo|modulo|module|modules|component|components|componente|componentes|endpoint|endpoints|file|files|\.(?:js|ts|jsx|tsx|html|css|json|py|md|sh))\b/i;
     return regexAccion.test(texto) && regexObjetivo.test(texto);
 }
@@ -153,7 +170,7 @@ export function procesarInputUsuario(input, workspacePath = null) {
     const regexEdicion = /^(?:edita|editar|modifica|modificar|edit)\s+(?:el\s+archivo\s+|el\s+fichero\s+|archivo\s+|fichero\s+|file\s+)?(?:"([^"]+)"|([^\s\?]+))\s*(.*)/i;
     const regexEditaRepo = /^(?:edita-repo|editar-repo)\s*(.*)/i;
     // Comando /crea: crea un archivo nuevo (y su carpeta si no existe) con contenido generado por la IA
-    const regexCreacion = /^(?:crea|crear|new|nuevo|genera|generar)\s+(?:el\s+archivo\s+|el\s+fichero\s+|archivo\s+|fichero\s+|file\s+)?(?:"([^"]+)"|([^\s\?]+))\s*(.*)/i;
+    const regexCreacion = /^(?:crea|crear|new|nuevo|genera|generar)\s+(?:un\s+|una\s+|el\s+|la\s+|new\s+|the\s+|a\s+)?(?:nuevo\s+|nueva\s+)?(?:archivo\s+|fichero\s+|file\s+)?(?:"([^"]+)"|([a-zA-Z0-9_\-\.\/]+))\s*(.*)/i;
 
     const matchRepo = promptFinal.match(regexRepo);
     const matchCarpeta = promptFinal.match(regexCarpeta);
@@ -164,108 +181,101 @@ export function procesarInputUsuario(input, workspacePath = null) {
 
     const rutaRaizEfectiva = workspacePath || config.projectRoot;
 
-    // ── Detección autónoma de creación/edición en lenguaje natural ─────────────
-    const carpetaSolicitada = extraerIntencionCrearCarpeta(promptFinal);
+    // ── 1. Comandos explícitos o prefijados ────────────────────────────────────
 
-    // Si se solicitó una carpeta, verificar si el texto restante pide generar código/archivos
-    let tieneIntencionEdicion = false;
-    if (workspacePath) {
-        if (carpetaSolicitada) {
-            // El usuario pidió crear una carpeta. Solo activamos modoEditaRepo si
-            // el prompt pide explícitamente generar o escribir archivos/código/tests reales
-            // (ej: "crea carpeta src/test donde irán los unit tests para verificar...").
-            // Si el prompt solo es "crea la carpeta test dentro de src del repositorio",
-            // la palabra "test" es el nombre de la carpeta, no un pedido de código.
-            const regexPideCodigoReal = /\b(?:unit\s*tests?|pruebas?\s+unitarias?|archivos?|ficheros?|files?|código|codigo|code|escribe|escribir|genera|generar|implementa|implementar|donde\s+ir[aá]n|para\s+verificar|verifiquemos|nesecitemos|necesitemos|tests?\s+que)\b/i;
-            tieneIntencionEdicion = regexPideCodigoReal.test(promptFinal);
-        } else {
-            tieneIntencionEdicion = detectarIntencionEdicionAutonoma(promptFinal) ||
-                (matchLectura && detectarIntencionEdicionAutonoma(matchLectura[3] || ''));
+    // A. Lectura de archivo o carpeta (/lee <archivo|carpeta> [instrucción])
+    if (matchLectura) {
+        const rutaParam = (matchLectura[1] || matchLectura[2]).trim();
+        const rutaEncontrada = resolverArchivoEnWorkspace(rutaRaizEfectiva, rutaParam) || (fs.existsSync(rutaParam) ? rutaParam : null);
+        if (!rutaEncontrada) {
+            return { error: `No se encontró el archivo o carpeta '${rutaParam}'.` };
+        }
+        try {
+            const stats = fs.statSync(rutaEncontrada);
+            if (stats.isDirectory()) {
+                const { archivos, totalBytes, limitAlcanzado } = leerCarpetaRecursiva(rutaEncontrada);
+                const { resumen, kbTotal } = formatearContextoCarpeta(rutaEncontrada, archivos, totalBytes, limitAlcanzado);
+                contexto += resumen;
+                promptFinal = matchLectura[3] || "Analiza esta carpeta.";
+                return {
+                    promptFinal,
+                    contexto,
+                    workspaceYaCargado: true,
+                    info: `[Mac: ${archivos.length} archivos de '${rutaParam}' cargados (${kbTotal} KB)]`,
+                    skillAplicada
+                };
+            } else {
+                const contenido = fs.readFileSync(rutaEncontrada, 'utf-8');
+                const rutaRelativa = path.relative(rutaRaizEfectiva, rutaEncontrada) || rutaParam;
+                contexto += `=== ARCHIVO DE REFERENCIA / EJEMPLO (${rutaRelativa}) ===\n${contenido}\n=== FIN ARCHIVO DE REFERENCIA ===\n\n`;
+
+                const instruccionRestante = matchLectura[3] ? matchLectura[3].trim() : '';
+                const targetIndividual = extraerIntencionArchivoIndividual(instruccionRestante);
+
+                if (targetIndividual) {
+                    // El usuario adjuntó un archivo de ejemplo y pidió crear/generar otro archivo específico (ej: AGENT.md)
+                    const rutaDestino = path.isAbsolute(targetIndividual)
+                        ? targetIndividual
+                        : path.join(rutaRaizEfectiva, targetIndividual);
+
+                    promptFinal = `Instrucción: ${instruccionRestante}\n\n` +
+                        `TAREA: Basándote en el archivo de referencia adjunto y en la estructura real del repositorio actual, ` +
+                        `genera el contenido completo, detallado y profesional para el archivo '${targetIndividual}'. ` +
+                        `Devuelve el contenido completo listo para ser guardado (sin textos de introducción ni despedidas).`;
+
+                    return {
+                        promptFinal,
+                        contexto,
+                        modoCreacion: true,
+                        archivoDestino: rutaDestino,
+                        info: `[Mac: Archivo de referencia '${rutaRelativa}' cargado — Generando '${targetIndividual}']`,
+                        skillAplicada
+                    };
+                }
+
+                promptFinal = instruccionRestante || "Analiza este archivo de referencia y responde en base a su estructura y contenido.";
+                const kb = (Buffer.byteLength(contenido, 'utf-8') / 1024).toFixed(1);
+                return {
+                    promptFinal,
+                    contexto,
+                    info: `[Mac: Archivo de referencia '${rutaRelativa}' cargado (${kb} KB)]`,
+                    skillAplicada
+                };
+            }
+        } catch (e) {
+            return { error: `Error leyendo '${rutaParam}': ${e.message}` };
         }
     }
 
-    // 1. Si es creación de carpeta pura:
-    // Se ejecuta de inmediato en disco (1ms) sin quemar tokens del LLM ni fallar en parseos
-    if (carpetaSolicitada && workspacePath && !tieneIntencionEdicion) {
+    // B. Creación de un archivo individual (/crea <archivo> <instrucción>)
+    if (matchCreacion) {
+        modoCreacion = true;
+        const rutaParam = (matchCreacion[1] || matchCreacion[2]).trim();
+        const instruccion = matchCreacion[3] || 'Genera el contenido apropiado para este archivo.';
+
+        const rutaAbsoluta = path.isAbsolute(rutaParam)
+            ? rutaParam
+            : path.join(rutaRaizEfectiva, rutaParam);
+
+        if (fs.existsSync(rutaAbsoluta) && fs.statSync(rutaAbsoluta).isFile()) {
+            const contenidoExistente = fs.readFileSync(rutaAbsoluta, 'utf-8');
+            contexto += `Contenido actual de ${rutaParam}:\n${contenidoExistente}\n\n`;
+        }
+
+        promptFinal = `Instrucción: ${instruccion}\n\nREGLA: Genera el contenido completo y bien estructurado del archivo '${rutaParam}'. Devuelve el contenido listo para guardar sin bloques conversacionales extras.`;
+        archivoDestino = rutaAbsoluta;
+
         return {
             promptFinal,
             contexto,
-            crearCarpetaDirecta: carpetaSolicitada,
-            info: `[Creando carpeta: ${carpetaSolicitada}]`,
+            modoCreacion: true,
+            archivoDestino: rutaAbsoluta,
+            info: `[Creando archivo: ${rutaParam}]`,
             skillAplicada
         };
     }
 
-    // 2. Si hay intención autónoma de crear o editar archivos/tests/código:
-    if (tieneIntencionEdicion) {
-        // Inyectar archivos específicos si fueron mencionados (ej: "lee AGENTS.md y crea...")
-        let referenciaArchivos = '';
-        if (rutaRaizEfectiva) {
-            const regexArchivoMencion = /(?:^|\s)["']?([a-zA-Z0-9_\-\.\/]+\.(?:js|mjs|cjs|ts|tsx|jsx|html|css|json|md|txt|py|java|c|cpp|h|rs|go|sh|yaml|yml|toml|sql))["']?(?:\?|\!|,|\s|$)/gi;
-            let mArch;
-            while ((mArch = regexArchivoMencion.exec(promptFinal)) !== null) {
-                const candidato = mArch[1];
-                const ruta = resolverArchivoEnWorkspace(rutaRaizEfectiva, candidato);
-                if (ruta && fs.existsSync(ruta) && fs.statSync(ruta).isFile() && !referenciaArchivos.includes(`=== ${candidato}`)) {
-                    try {
-                        const contenido = fs.readFileSync(ruta, 'utf-8');
-                        const rutaRelativa = path.relative(rutaRaizEfectiva, ruta) || candidato;
-                        referenciaArchivos += `=== CONTENIDO DE REFERENCIA: ${rutaRelativa} ===\n${contenido}\n=== FIN REFERENCIA: ${rutaRelativa} ===\n\n`;
-                    } catch {}
-                }
-            }
-        }
-
-        try {
-            const { archivos, totalBytes, limitAlcanzado } = leerCarpetaRecursiva(rutaRaizEfectiva);
-            const { resumen, kbTotal } = formatearContextoCarpeta(rutaRaizEfectiva, archivos, totalBytes, limitAlcanzado);
-
-            // La instrucción de sistema se envía por separado en systemPrompt (rol 'system' en Ollama),
-            // lo que evita que el modelo la olvide por el efecto de recency bias al tener 100KB+ de repo.
-            // El promptFinal solo lleva el contenido del repo + instrucción del usuario.
-            // Al final se añade el prefijo `[` para forzar que el modelo complete en JSON directamente.
-            const instruccionSistema = [
-                `Eres un agente autónomo de creación y modificación de código.`,
-                `TAREA: Analiza el repositorio y las referencias proporcionadas, y aplica la instrucción del usuario.`,
-                `FORMATO DE RESPUESTA OBLIGATORIO:`,
-                `  Devuelve EXCLUSIVAMENTE un array JSON válido. Sin texto previo, sin explicaciones, sin bloques markdown.`,
-                `  Cada elemento debe tener:`,
-                `    - "ruta": ruta relativa del archivo desde la raíz del workspace (ej: "src/test/foo.test.js")`,
-                `    - "contenido": código completo y funcional del archivo`,
-                `REGLAS ABSOLUTAS:`,
-                `  - NUNCA escribas texto antes del JSON. Tu primera respuesta debe ser el carácter [`,
-                `  - NUNCA uses bloques \`\`\`json ni \`\`\` de ningún tipo`,
-                `  - NUNCA expliques lo que vas a hacer. Solo genera el JSON.`,
-                `  - Puedes crear archivos nuevos en rutas nuevas (el sistema crea las carpetas automáticamente)`,
-                `  - Si la instrucción pide archivos en src/test/, usa rutas como "src/test/archivo.test.js"`,
-            ].join('\n');
-
-            // El contexto del usuario lleva: referencias de archivos pedidos + mapa del repo + instrucción
-            const promptEditaRepo = [
-                referenciaArchivos,
-                `=== REPOSITORIO ===`,
-                resumen,
-                `===================`,
-                ``,
-                `INSTRUCCIÓN DEL USUARIO: ${promptFinal}`,
-                ``,
-                `IMPORTANTE: Responde ÚNICAMENTE con el array JSON. Empieza con [`,
-            ].join('\n');
-
-            return {
-                promptFinal: promptEditaRepo,
-                contexto: '',  // vacío: toda la info ya está en promptFinal e instruccionSistema
-                modoEditaRepo: true,
-                instruccionSistema,  // se enviará como rol 'system' en ollama.js
-                workspaceYaCargado: true,
-                info: `[Agente autónomo: ${archivos.length} archivos del workspace cargados para aplicar cambios en disco (${kbTotal} KB)]`,
-                skillAplicada
-            };
-        } catch (e) {
-            console.error('[Autónomo] Error cargando repositorio para edición autónoma:', e.message);
-        }
-    }
-
+    // C. Edición de un archivo individual (/edita <archivo> <instrucción>)
     if (matchEdicion) {
         modoEdicion = true;
         const archivoBuscado = (matchEdicion[1] || matchEdicion[2]).trim();
@@ -279,40 +289,67 @@ export function procesarInputUsuario(input, workspacePath = null) {
             contexto += `Código actual de ${rutaRelativa}:\n${contenido}\n\n`;
             promptFinal = `Instrucción: ${matchEdicion[3] || 'Optimiza este código'}\n\nREGLA ESTRICTA: Devuelve ÚNICAMENTE el código final modificado. Sin saludos, explicaciones ni bloques markdown.`;
             archivoDestino = rutaCompleta;
+            return {
+                promptFinal,
+                contexto,
+                modoEdicion: true,
+                archivoDestino: rutaCompleta,
+                info: `[Modificando archivo: ${rutaRelativa}]`,
+                skillAplicada
+            };
         } catch (e) {
             return { error: `Error leyendo '${archivoBuscado}' para edición: ${e.message}` };
         }
-    } else if (matchCreacion) {
-        // Modo creación: el archivo puede no existir todavía.
-        // La IA generará su contenido completo y main.js lo escribirá en disco
-        // creando la carpeta padre si es necesario.
-        modoCreacion = true;
-        const rutaParam = (matchCreacion[1] || matchCreacion[2]).trim();
-        const instruccion = matchCreacion[3] || 'Genera el contenido apropiado para este archivo.';
+    }
 
-        // Normalizar: si es relativa, unirla a la raíz del workspace
-        const rutaAbsoluta = path.isAbsolute(rutaParam)
-            ? rutaParam
-            : path.join(rutaRaizEfectiva, rutaParam);
-
-        // Si el archivo ya existe, incluir su contenido como contexto para que la IA lo amplíe
-        if (fs.existsSync(rutaAbsoluta) && fs.statSync(rutaAbsoluta).isFile()) {
-            const contenidoExistente = fs.readFileSync(rutaAbsoluta, 'utf-8');
-            contexto += `Contenido actual de ${rutaParam}:\n${contenidoExistente}\n\n`;
+    // D. Lectura de repositorio (/lee-repo [pregunta])
+    if (matchRepo) {
+        try {
+            const { archivos, totalBytes, limitAlcanzado } = leerCarpetaRecursiva(rutaRaizEfectiva);
+            if (archivos.length === 0) {
+                return { error: 'No se encontraron archivos compatibles en el repositorio.' };
+            }
+            const { resumen, kbTotal } = formatearContextoCarpeta(rutaRaizEfectiva, archivos, totalBytes, limitAlcanzado);
+            contexto += resumen;
+            promptFinal = matchRepo[1] || "Analiza la arquitectura y estructura de este repositorio.";
+            return {
+                promptFinal,
+                contexto,
+                workspaceYaCargado: true,
+                info: `[Mac: ${archivos.length} archivos del repositorio cargados en contexto (${kbTotal} KB)${limitAlcanzado ? ' — límite alcanzado' : ''}]`,
+                skillAplicada
+            };
+        } catch (e) {
+            return { error: `Error leyendo repositorio: ${e.message}` };
         }
+    }
 
-        promptFinal = `Instrucción: ${instruccion}\n\nREGLA ESTRICTA: Devuelve ÚNICAMENTE el código o contenido final del archivo '${rutaParam}'. Sin saludos, explicaciones, prefijos de ruta ni bloques markdown.`;
-        archivoDestino = rutaAbsoluta;
+    // E. Lectura de carpeta (/lee-carpeta <directorio>)
+    if (matchCarpeta) {
+        const rutaParam = (matchCarpeta[1] || matchCarpeta[2]).trim();
+        const rutaObjetivo = resolverArchivoEnWorkspace(rutaRaizEfectiva, rutaParam) || path.join(rutaRaizEfectiva, rutaParam);
+        try {
+            const { archivos, totalBytes, limitAlcanzado } = leerCarpetaRecursiva(rutaObjetivo);
+            if (archivos.length === 0) {
+                return { error: `No se encontraron archivos compatibles en '${rutaParam}'.` };
+            }
+            const { resumen, kbTotal } = formatearContextoCarpeta(rutaObjetivo, archivos, totalBytes, limitAlcanzado);
+            contexto += resumen;
+            promptFinal = matchCarpeta[3] || "Analiza los archivos de esta carpeta.";
+            return {
+                promptFinal,
+                contexto,
+                workspaceYaCargado: true,
+                info: `[Mac: ${archivos.length} archivos de '${rutaParam}' cargados en contexto (${kbTotal} KB)${limitAlcanzado ? ' — límite alcanzado' : ''}]`,
+                skillAplicada
+            };
+        } catch (e) {
+            return { error: `Error leyendo carpeta '${rutaParam}': ${e.message}` };
+        }
+    }
 
-        return {
-            promptFinal,
-            contexto,
-            modoCreacion: true,
-            archivoDestino: rutaAbsoluta,
-            info: `[Creando archivo: ${rutaParam}]`,
-            skillAplicada
-        };
-    } else if (matchEditaRepo) {
+    // F. Edición multi-archivo explícita (/edita-repo <instrucción>)
+    if (matchEditaRepo) {
         modoEditaRepo = true;
         const instruccion = matchEditaRepo[1] || "Optimiza el repositorio.";
         try {
@@ -359,91 +396,116 @@ export function procesarInputUsuario(input, workspacePath = null) {
         } catch (e) {
             return { error: `Error leyendo repositorio: ${e.message}` };
         }
-    } else if (matchRepo) {
+    }
+
+    // ── 2. Detección en Lenguaje Natural (sin prefijo de comando) ─────────────
+
+    // A. Creación de carpeta pura (ej: "crea una carpeta llamada test en src")
+    const carpetaSolicitada = extraerIntencionCrearCarpeta(promptFinal);
+    const regexPideCodigoReal = /\b(?:unit\s*tests?|pruebas?\s+unitarias?|archivos?|ficheros?|files?|código|codigo|code|escribe|escribir|genera|generar|implementa|implementar|donde\s+ir[aá]n|para\s+verificar|verifiquemos|nesecitemos|necesitemos|tests?\s+que)\b/i;
+    const pideCodigo = regexPideCodigoReal.test(promptFinal);
+
+    if (carpetaSolicitada && workspacePath && !pideCodigo) {
+        return {
+            promptFinal,
+            contexto,
+            crearCarpetaDirecta: carpetaSolicitada,
+            info: `[Creando carpeta: ${carpetaSolicitada}]`,
+            skillAplicada
+        };
+    }
+
+    // B. Creación de archivo individual en lenguaje natural (ej: "crea un nuevo AGENT.md basado en...")
+    const targetIndividual = extraerIntencionArchivoIndividual(promptFinal);
+    if (targetIndividual && workspacePath) {
+        // Inyectar referencias de archivos si fueron mencionados en el texto (ej: "basado en AGENTS.md")
+        const regexArchivoMencion = /(?:^|\s)["']?([a-zA-Z0-9_\-\.\/]+\.(?:js|mjs|cjs|ts|tsx|jsx|html|css|json|md|txt|py|java|c|cpp|h|rs|go|sh|yaml|yml|toml|sql))["']?(?:\?|\!|,|\s|$)/gi;
+        let mArch;
+        while ((mArch = regexArchivoMencion.exec(promptFinal)) !== null) {
+            const candidato = mArch[1];
+            if (candidato.toLowerCase() === targetIndividual.toLowerCase()) continue;
+            const ruta = resolverArchivoEnWorkspace(rutaRaizEfectiva, candidato) || (fs.existsSync(candidato) ? candidato : null);
+            if (ruta && fs.existsSync(ruta) && fs.statSync(ruta).isFile()) {
+                try {
+                    const contenido = fs.readFileSync(ruta, 'utf-8');
+                    const rutaRelativa = path.relative(rutaRaizEfectiva, ruta) || candidato;
+                    contexto += `=== CONTENIDO DE REFERENCIA: ${rutaRelativa} ===\n${contenido}\n=== FIN REFERENCIA ===\n\n`;
+                } catch {}
+            }
+        }
+
+        const rutaDestino = path.isAbsolute(targetIndividual)
+            ? targetIndividual
+            : path.join(rutaRaizEfectiva, targetIndividual);
+
+        promptFinal = `Instrucción del usuario: ${promptFinal}\n\n` +
+            `TAREA: Genera el contenido completo, detallado y profesional para el archivo '${targetIndividual}'. ` +
+            `Básate en el archivo de referencia si se proporcionó y en la estructura real del repositorio actual. ` +
+            `Devuelve el contenido completo listo para ser guardado.`;
+
+        return {
+            promptFinal,
+            contexto,
+            modoCreacion: true,
+            archivoDestino: rutaDestino,
+            info: `[Mac: Preparando creación de '${targetIndividual}']`,
+            skillAplicada
+        };
+    }
+
+    // C. Edición multi-archivo autónoma (solo si se pide expresamente modificar todo el repo y no hay archivo individual)
+    const pideModificarTodoElRepo = /\b(?:todo\s+el\s+repo|todos\s+los\s+archivos|el\s+repositorio\s+entero|all\s+files|whole\s+repo|entire\s+repo)\b/i.test(promptFinal);
+    if (workspacePath && pideModificarTodoElRepo && detectarIntencionEdicionAutonoma(promptFinal)) {
         try {
             const { archivos, totalBytes, limitAlcanzado } = leerCarpetaRecursiva(rutaRaizEfectiva);
-            if (archivos.length === 0) {
-                return { error: 'No se encontraron archivos compatibles en el repositorio.' };
-            }
             const { resumen, kbTotal } = formatearContextoCarpeta(rutaRaizEfectiva, archivos, totalBytes, limitAlcanzado);
-            contexto += resumen;
-            promptFinal = matchRepo[1] || "Analiza la arquitectura y estructura de este repositorio.";
+
+            const instruccionSistema = [
+                `Eres un agente autónomo de creación y modificación de código.`,
+                `TAREA: Analiza el repositorio proporcionado y aplica la instrucción del usuario.`,
+                `FORMATO DE RESPUESTA OBLIGATORIO:`,
+                `  Devuelve EXCLUSIVAMENTE un array JSON válido. Sin texto previo, sin explicaciones, sin bloques markdown.`,
+                `  Cada elemento debe tener:`,
+                `    - "ruta": ruta relativa del archivo desde la raíz del workspace`,
+                `    - "contenido": código completo y funcional del archivo`,
+                `REGLAS ABSOLUTAS:`,
+                `  - NUNCA escribas texto antes del JSON. Tu primera respuesta debe ser el carácter [`,
+                `  - NUNCA uses bloques \`\`\`json ni \`\`\` de ningún tipo`,
+                `  - NUNCA expliques lo que vas a hacer. Solo genera el JSON.`,
+            ].join('\n');
+
+            const promptEditaRepo = [
+                `=== REPOSITORIO ===`,
+                resumen,
+                `===================`,
+                ``,
+                `INSTRUCCIÓN DEL USUARIO: ${promptFinal}`,
+                ``,
+                `IMPORTANTE: Responde ÚNICAMENTE con el array JSON. Empieza con [`,
+            ].join('\n');
+
             return {
-                promptFinal,
-                contexto,
+                promptFinal: promptEditaRepo,
+                contexto: '',
+                modoEditaRepo: true,
+                instruccionSistema,
                 workspaceYaCargado: true,
-                info: `[Mac: ${archivos.length} archivos del repositorio cargados en contexto (${kbTotal} KB)${limitAlcanzado ? ' — límite alcanzado' : ''}]`,
+                info: `[Agente autónomo: ${archivos.length} archivos del workspace cargados para edición múltiple (${kbTotal} KB)]`,
                 skillAplicada
             };
         } catch (e) {
-            return { error: `Error leyendo repositorio: ${e.message}` };
-        }
-    } else if (matchCarpeta) {
-        const rutaParam = (matchCarpeta[1] || matchCarpeta[2]).trim();
-        const rutaObjetivo = resolverArchivoEnWorkspace(rutaRaizEfectiva, rutaParam) || path.join(rutaRaizEfectiva, rutaParam);
-        try {
-            const { archivos, totalBytes, limitAlcanzado } = leerCarpetaRecursiva(rutaObjetivo);
-            if (archivos.length === 0) {
-                return { error: `No se encontraron archivos compatibles en '${rutaParam}'.` };
-            }
-            const { resumen, kbTotal } = formatearContextoCarpeta(rutaObjetivo, archivos, totalBytes, limitAlcanzado);
-            contexto += resumen;
-            promptFinal = matchCarpeta[3] || "Analiza los archivos de esta carpeta.";
-            return {
-                promptFinal,
-                contexto,
-                workspaceYaCargado: true,
-                info: `[Mac: ${archivos.length} archivos de '${rutaParam}' cargados en contexto (${kbTotal} KB)${limitAlcanzado ? ' — límite alcanzado' : ''}]`,
-                skillAplicada
-            };
-        } catch (e) {
-            return { error: `Error leyendo carpeta '${rutaParam}': ${e.message}` };
-        }
-    } else if (matchLectura) {
-        const rutaParam = (matchLectura[1] || matchLectura[2]).trim();
-        const rutaEncontrada = resolverArchivoEnWorkspace(rutaRaizEfectiva, rutaParam);
-        if (!rutaEncontrada) {
-            return { error: `No se encontró el archivo o carpeta '${rutaParam}' en el workspace actual (${rutaRaizEfectiva}).` };
-        }
-        try {
-            const stats = fs.statSync(rutaEncontrada);
-            if (stats.isDirectory()) {
-                const { archivos, totalBytes } = leerCarpetaRecursiva(rutaEncontrada);
-                const { resumen, kbTotal } = formatearContextoCarpeta(rutaEncontrada, archivos, totalBytes);
-                contexto += resumen;
-                promptFinal = matchLectura[3] || "Analiza esta carpeta.";
-                return {
-                    promptFinal,
-                    contexto,
-                    info: `[Mac: ${archivos.length} archivos de '${rutaParam}' cargados (${kbTotal} KB)]`,
-                    skillAplicada
-                };
-            } else {
-                const contenido = fs.readFileSync(rutaEncontrada, 'utf-8');
-                const rutaRelativa = path.relative(rutaRaizEfectiva, rutaEncontrada) || rutaParam;
-                contexto += `=== CONTENIDO DE: ${rutaRelativa} ===\n${contenido}\n=== FIN ARCHIVO: ${rutaRelativa} ===\n\n`;
-                promptFinal = matchLectura[3] || "Analiza este archivo y responde en base a su código y estructura.";
-                const kb = (Buffer.byteLength(contenido, 'utf-8') / 1024).toFixed(1);
-                return {
-                    promptFinal,
-                    contexto,
-                    info: `[Mac: Archivo '${rutaRelativa}' cargado (${kb} KB)]`,
-                    skillAplicada
-                };
-            }
-        } catch (e) {
-            return { error: `Error leyendo '${rutaParam}': ${e.message}` };
+            console.error('[Autónomo] Error cargando repositorio:', e.message);
         }
     }
 
-    // Detección automática en lenguaje natural si se menciona un archivo existente en el workspace (solo lectura informativa)
+    // D. Inyección automática en lenguaje natural si se menciona un archivo existente en el workspace (modo informativo/pregunta)
     if (rutaRaizEfectiva) {
         const regexArchivoMencion = /(?:^|\s)["']?([a-zA-Z0-9_\-\.\/]+\.(?:js|mjs|cjs|ts|tsx|jsx|html|css|json|md|txt|py|java|c|cpp|h|rs|go|sh|yaml|yml|toml|sql))["']?(?:\?|\!|,|\s|$)/gi;
         let match;
         const archivosInyectados = [];
         while ((match = regexArchivoMencion.exec(promptFinal)) !== null) {
             const candidato = match[1];
-            const ruta = resolverArchivoEnWorkspace(rutaRaizEfectiva, candidato);
+            const ruta = resolverArchivoEnWorkspace(rutaRaizEfectiva, candidato) || (fs.existsSync(candidato) ? candidato : null);
             if (ruta && fs.existsSync(ruta) && fs.statSync(ruta).isFile() && !archivosInyectados.includes(ruta)) {
                 try {
                     const contenido = fs.readFileSync(ruta, 'utf-8');
@@ -454,7 +516,7 @@ export function procesarInputUsuario(input, workspacePath = null) {
             }
         }
         if (archivosInyectados.length > 0) {
-            const nombres = archivosInyectados.map(r => path.relative(rutaRaizEfectiva, r)).join(', ');
+            const nombres = archivosInyectados.map(r => path.relative(rutaRaizEfectiva, r) || r).join(', ');
             return {
                 promptFinal,
                 contexto,

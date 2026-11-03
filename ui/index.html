@@ -967,6 +967,29 @@
       return indentedBlock;
     });
 
+    // 0. Manejar etiquetas de razonamiento de modelos <think>...</think>
+    const thinks = [];
+    out = out.replace(/<think>([\s\S]*?)<\/think>/gi, (_, thinkContent) => {
+      const idx = thinks.length;
+      const escapedThink = thinkContent.trim()
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      thinks.push(`<details class="think-block"><summary class="think-summary">💭 Razonamiento del modelo</summary><div class="think-content">${escapedThink}</div></details>`);
+      return `\n\n@@THINKBLOCK${idx}@@\n\n`;
+    });
+    if (out.includes('<think>') && !out.includes('</think>')) {
+      out = out.replace(/<think>([\s\S]*)$/i, (_, thinkContent) => {
+        const idx = thinks.length;
+        const escapedThink = thinkContent.trim()
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+        thinks.push(`<details class="think-block" open><summary class="think-summary">💭 Pensando...</summary><div class="think-content">${escapedThink}</div></details>`);
+        return `\n\n@@THINKBLOCK${idx}@@\n\n`;
+      });
+    }
+
     // 1. Manejar bloques de código (tanto cerrados como abiertos durante streaming)
     // Si hay un número impar de ```, añadir temporalmente el cierre para renderizarlo
     const conteoBackticks = (out.match(/```/g) || []).length;
@@ -1067,6 +1090,11 @@
     // 13. Restaurar bloques de código
     bloques.forEach((bloque, i) => {
       out = out.split(`@@CODEBLOCK${i}@@`).join(bloque);
+    });
+
+    // 14. Restaurar bloques de razonamiento <think>
+    thinks.forEach((thinkHtml, i) => {
+      out = out.split(`@@THINKBLOCK${i}@@`).join(thinkHtml);
     });
 
     // Limpieza de cualquier etiqueta <p> vacía residual
