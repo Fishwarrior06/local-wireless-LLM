@@ -210,6 +210,24 @@ export function procesarInputUsuario(input, workspacePath = null) {
                 contexto += `=== ARCHIVO DE REFERENCIA / EJEMPLO (${rutaRelativa}) ===\n${contenido}\n=== FIN ARCHIVO DE REFERENCIA ===\n\n`;
 
                 const instruccionRestante = matchLectura[3] ? matchLectura[3].trim() : '';
+                const archivosCargados = [rutaRelativa];
+
+                // Escanear si hay archivos adicionales mencionados en la instrucción (ej: "y el readme.md")
+                const regexArchivoMencion = /(?:^|\s)["']?([a-zA-Z0-9_\-\.\/]+\.(?:js|mjs|cjs|ts|tsx|jsx|html|css|json|md|txt|py|java|c|cpp|h|rs|go|sh|yaml|yml|toml|sql))["']?(?:\?|\!|,|\s|$)/gi;
+                let mArch;
+                while ((mArch = regexArchivoMencion.exec(instruccionRestante)) !== null) {
+                    const candidato = mArch[1];
+                    const rutaSec = resolverArchivoEnWorkspace(rutaRaizEfectiva, candidato) || (fs.existsSync(candidato) ? candidato : null);
+                    if (rutaSec && fs.existsSync(rutaSec) && fs.statSync(rutaSec).isFile() && !archivosCargados.some(a => a.toLowerCase() === candidato.toLowerCase())) {
+                        try {
+                            const contSec = fs.readFileSync(rutaSec, 'utf-8');
+                            const relSec = path.relative(rutaRaizEfectiva, rutaSec) || candidato;
+                            contexto += `=== CONTENIDO DE: ${relSec} ===\n${contSec}\n=== FIN ARCHIVO: ${relSec} ===\n\n`;
+                            archivosCargados.push(relSec);
+                        } catch {}
+                    }
+                }
+
                 const targetIndividual = extraerIntencionArchivoIndividual(instruccionRestante);
 
                 if (targetIndividual) {
@@ -228,7 +246,7 @@ export function procesarInputUsuario(input, workspacePath = null) {
                         contexto,
                         modoCreacion: true,
                         archivoDestino: rutaDestino,
-                        info: `[Mac: Archivo de referencia '${rutaRelativa}' cargado — Generando '${targetIndividual}']`,
+                        info: `[Mac: Archivo(s) '${archivosCargados.join(', ')}' cargado(s) — Generando '${targetIndividual}']`,
                         skillAplicada
                     };
                 }
@@ -238,7 +256,7 @@ export function procesarInputUsuario(input, workspacePath = null) {
                 return {
                     promptFinal,
                     contexto,
-                    info: `[Mac: Archivo de referencia '${rutaRelativa}' cargado (${kb} KB)]`,
+                    info: `[Mac: Archivo(s) '${archivosCargados.join(', ')}' cargado(s) (${kb} KB)]`,
                     skillAplicada
                 };
             }

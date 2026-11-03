@@ -8,7 +8,7 @@ import { config } from './src/config.js';
 import { generarStream, listarModelosOllama, consultarEstadoJob, abortarJob, verificarDaemonDisponible } from './src/ollama.js';
 import { procesarInputUsuario } from './src/commands.js';
 import { obtenerSkills } from './src/skills-loader.js';
-import { leerCarpetaRecursiva, formatearContextoCarpeta } from './src/fs-tools.js';
+import { leerCarpetaRecursiva, formatearContextoCarpeta, seleccionarArchivosRelevantes, formatearContextoInteligente } from './src/fs-tools.js';
 import {
     obtenerSfSymbolDataUrl,
     obtenerSfSymbolNativeImage,
@@ -673,33 +673,47 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
     //
     // En modoEditaRepo: commands.js genera su propia instruccionSistema (la restricción JSON),
     // que reemplaza al systemPrompt del workspace para que el modelo no la olvide por recency bias.
+    // Budget de tokens para contexto del workspace.
+    // Con 16K de ventana dejamos ~6K para historial y respuesta del modelo.
+    const WORKSPACE_TOKEN_BUDGET = 10000;
+
     let systemPrompt = '';
     if (parsed.instruccionSistema) {
         // Modo agente autónomo: la instrucción JSON forzada tiene prioridad absoluta como system role
         systemPrompt = parsed.instruccionSistema;
     } else if (carpeta) {
         try {
-            const { archivos, totalBytes, limitAlcanzado } = leerCarpetaRecursiva(carpeta);
+            const { archivos } = leerCarpetaRecursiva(carpeta);
             if (archivos.length > 0) {
-                const mapEstructura =
-                    `Workspace: ${carpeta}\n` +
-                    `Archivos disponibles (${archivos.length}${limitAlcanzado ? ', hay más fuera del límite de carga' : ''}):\n` +
-                    archivos.map(a => `- ${a.ruta}`).join('\n') + '\n';
+                // Texto combinado para scoring de relevancia: contexto del comando + input del usuario
+                const promptParaRelevancia = `${parsed.contexto} ${inputTexto}`;
+                const { seleccionados, todosCaben, mapa } = seleccionarArchivosRelevantes(
+                    archivos,
+                    promptParaRelevancia,
+                    WORKSPACE_TOKEN_BUDGET
+                );
 
-                const esConversacionNueva = historial.filter(m => m.texto?.trim()).length === 0;
-                const tieneContextoComando = parsed.workspaceYaCargado || parsed.contexto.includes('=== CONTENIDO DE:') || parsed.contexto.includes('=== ARCHIVO DE REFERENCIA');
+                const tieneContextoComando =
+                    parsed.workspaceYaCargado ||
+                    parsed.contexto.includes('=== CONTENIDO DE:') ||
+                    parsed.contexto.includes('=== ARCHIVO DE REFERENCIA');
 
-                if (!tieneContextoComando && esConversacionNueva && !parsed.modoCreacion && !parsed.modoEdicion) {
-                    // Primer turno sin comando explícito: enviar el repo completo como 'system'
-                    const { resumen } = formatearContextoCarpeta(carpeta, archivos, totalBytes, limitAlcanzado);
-                    systemPrompt = resumen;
+                if (tieneContextoComando) {
+                    // commands.js ya inyectó el contenido relevante en parsed.contexto.
+                    // Solo añadimos el mapa estructural para no duplicar tokens.
+                    systemPrompt = `=== WORKSPACE: ${carpeta} ===\n` + mapa;
                 } else {
-                    // Turnos siguientes o en modo creación/referencia: pasar el mapa estructural completo
-                    systemPrompt = mapEstructura;
+                    // Inyección inteligente: mapa + archivos relevantes dentro del budget
+                    systemPrompt = formatearContextoInteligente(carpeta, seleccionados, todosCaben, mapa);
                 }
+
+                const estadoCtx = todosCaben
+                    ? `todos los archivos (${seleccionados.length})`
+                    : `${seleccionados.length}/${archivos.length} archivos (budget ~${WORKSPACE_TOKEN_BUDGET} tokens)`;
+                console.log(`[Workspace] Contexto inteligente: ${estadoCtx}`);
             }
         } catch (e) {
-            console.error('[Workspace] Error leyendo carpeta del workspace:', e.message);
+            console.error('[Workspace] Error construyendo contexto inteligente:', e.message);
         }
     }
 
