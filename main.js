@@ -695,9 +695,10 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
     //
     // En modoEditaRepo: commands.js genera su propia instruccionSistema (la restricción JSON),
     // que reemplaza al systemPrompt del workspace para que el modelo no la olvide por recency bias.
-    // Budget de tokens para contexto del workspace.
-    // Con 16K de ventana dejamos ~6K para historial y respuesta del modelo.
-    const WORKSPACE_TOKEN_BUDGET = 10000;
+    // Budget de tokens para contexto del workspace adaptado para inferencia local.
+    // Con ~3,500 tokens de archivos, modelos pesados (como 27B) o GPUs por Vulkan
+    // procesan el prompt holgadamente antes del timeout de 5 minutos de Ollama.
+    const WORKSPACE_TOKEN_BUDGET = 3500;
 
     let systemPrompt = '';
     if (parsed.instruccionSistema) {
