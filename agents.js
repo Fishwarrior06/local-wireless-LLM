@@ -80,7 +80,7 @@ function iniciarChat() {
             return;
         }
 
-        const parsed = procesarInputUsuario(trimmed);
+        const parsed = await procesarInputUsuario(trimmed);
         if (parsed.error) {
             console.log(chalk.red(`[Error]: ${parsed.error}`));
         } else {

@@ -3,6 +3,7 @@ import path from 'path';
 import { config } from './config.js';
 import { leerCarpetaRecursiva, formatearContextoCarpeta } from './fs-tools.js';
 import { detectarSkill } from './skills-loader.js';
+import { recuperarContextoMiniRAG } from './mini-rag.js';
 
 function buscarArchivoRecursivo(dir, nombreBuscado, profundidad = 0) {
     if (profundidad > 4) return null;
@@ -134,7 +135,7 @@ function detectarIntencionEdicionAutonoma(texto) {
     return regexAccion.test(texto) && regexObjetivo.test(texto);
 }
 
-export function procesarInputUsuario(input, workspacePath = null) {
+export async function procesarInputUsuario(input, workspacePath = null) {
     let contexto = "";
     let promptFinal = input;
     let modoEdicion = false;
@@ -142,6 +143,7 @@ export function procesarInputUsuario(input, workspacePath = null) {
     let modoCreacion = false;
     let archivoDestino = "";
     let skillAplicada = null;
+    let infoMiniRag = null;
 
     // Normalizar si viene con slash
     const limpio = input.startsWith('/') ? input.slice(1).trim() : input.trim();
@@ -171,6 +173,7 @@ export function procesarInputUsuario(input, workspacePath = null) {
     const regexEditaRepo = /^(?:edita-repo|editar-repo)\s*(.*)/i;
     // Comando /crea: crea un archivo nuevo (y su carpeta si no existe) con contenido generado por la IA
     const regexCreacion = /^(?:crea|crear|new|nuevo|genera|generar)\s+(?:un\s+|una\s+|el\s+|la\s+|new\s+|the\s+|a\s+)?(?:nuevo\s+|nueva\s+)?(?:archivo\s+|fichero\s+|file\s+)?(?:"([^"]+)"|([a-zA-Z0-9_\-\.\/]+))\s*(.*)/i;
+    const regexRag = /^(?:rag|migrar|mini-rag)\s*(.*)/i;
 
     const matchRepo = promptFinal.match(regexRepo);
     const matchCarpeta = promptFinal.match(regexCarpeta);
@@ -178,8 +181,34 @@ export function procesarInputUsuario(input, workspacePath = null) {
     const matchEdicion = promptFinal.match(regexEdicion);
     const matchEditaRepo = promptFinal.match(regexEditaRepo);
     const matchCreacion = promptFinal.match(regexCreacion);
+    const matchRag = promptFinal.match(regexRag);
 
     const rutaRaizEfectiva = workspacePath || config.projectRoot;
+
+    // ── 0. Comando explícito de Mini RAG / Migración (/rag o /migrar [pregunta]) ───
+    if (matchRag) {
+        promptFinal = matchRag[1] ? matchRag[1].trim() : 'Prepara las directrices y plan de migración para este servicio.';
+        try {
+            const ragRes = await recuperarContextoMiniRAG({
+                workspacePath: rutaRaizEfectiva,
+                consulta: promptFinal,
+                tokenBudget: 1500,
+                hostOllama: config.ollamaHost
+            });
+            if (ragRes && ragRes.contexto) {
+                contexto += ragRes.contexto;
+                infoMiniRag = ragRes.info;
+            }
+        } catch (e) {
+            console.warn('[Commands] Error en comando Mini-RAG:', e.message);
+        }
+        return {
+            promptFinal,
+            contexto,
+            info: infoMiniRag || '[Mini-RAG: Consulta ejecutada]',
+            skillAplicada
+        };
+    }
 
     // ── 1. Comandos explícitos o prefijados ────────────────────────────────────
 
@@ -544,6 +573,27 @@ export function procesarInputUsuario(input, workspacePath = null) {
         }
     }
 
+    // E. Mini-RAG Autónomo: Si es consulta sobre Spring Boot, migración o hay un pom.xml activo
+    const esConsultaMigracion = /\b(?:migrar|migracion|migration|upgrade|actualizar|springboot|spring-boot|pom\.xml|4\.1\.1|2\.7|jakarta|javax|cve|vulnerabilidad)\b/i.test(promptFinal);
+    const tienePom = rutaRaizEfectiva && fs.existsSync(path.join(rutaRaizEfectiva, 'pom.xml'));
+
+    if (esConsultaMigracion || tienePom) {
+        try {
+            const ragRes = await recuperarContextoMiniRAG({
+                workspacePath: rutaRaizEfectiva,
+                consulta: promptFinal,
+                tokenBudget: 1500,
+                hostOllama: config.ollamaHost
+            });
+            if (ragRes && ragRes.contexto) {
+                contexto += ragRes.contexto;
+                infoMiniRag = ragRes.info;
+            }
+        } catch (e) {
+            console.warn('[Commands] Error en Mini-RAG autónomo:', e.message);
+        }
+    }
+
     return {
         promptFinal,
         contexto,
@@ -551,6 +601,7 @@ export function procesarInputUsuario(input, workspacePath = null) {
         modoEditaRepo,
         modoCreacion,
         archivoDestino,
-        skillAplicada
+        skillAplicada,
+        info: infoMiniRag || null
     };
 }

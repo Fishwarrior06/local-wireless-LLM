@@ -21,12 +21,17 @@ local-wireless-LLM/
 ├── skills/                     # Skills en Markdown (.md con frontmatter)
 │   ├── refactorizar.md         # Clean Code y SOLID
 │   ├── documentar.md           # Generación de JSDoc y comentarios
-│   └── testear.md              # Pruebas unitarias
+│   ├── testear.md              # Pruebas unitarias
+│   └── migracion-spring.md     # Directrices de migración para Spring Boot 2.7 a 3.x/4.x
+│
+├── knowledge/                  # Base de conocimiento documental para Mini-RAG
+│   └── spring-boot-migration.md# Breaking changes, Jakarta EE, Security 6/7, Hibernate 6
 │
 ├── src/
 │   ├── config.js               # Rutas absolutas, persistencia en userData y gestión de modelo
 │   ├── fs-tools.js             # Recorrido recursivo seguro y formateo de carpetas/repos
 │   ├── skills-loader.js        # Carga, parseo y detección contextual de skills
+│   ├── mini-rag.js             # RAG vectorial ligero guiado por pom.xml y budget estricto de tokens
 │   ├── ollama.js               # Cliente HTTP stream (/api/chat), cancelación y listado de modelos
 │   ├── sf-symbols.js           # Generación dinámica de Apple SF Symbols (electron-sfsymbols)
 │   └── commands.js             # Parser de comandos y soporte de workspace dinámico
@@ -94,6 +99,7 @@ triggers: ["refactorizar", "clean-code", "modularizar"]
 | `/lee-carpeta <dir>` | Lectura | Lee recursivamente el árbol de código de una carpeta dada. |
 | `/edita <archivo> <instrucción>` | Escritura | Modifica un único archivo y lo sobreescribe en disco. |
 | `/edita-repo <instrucción>` | Escritura | Genera un JSON estructurado con múltiples archivos y los actualiza autónomamente. |
+| `/rag [consulta]` / `/migrar` | Mini-RAG | Recupera quirúrgicamente directrices y breaking changes guiado por pom.xml. |
 | `/<skill> [instrucción]` | Skill | Activa directrices especializadas desde `skills/*.md`. |
 
 ---

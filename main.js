@@ -634,7 +634,7 @@ ipcMain.on('mensaje-usuario', async (event, data) => {
     const carpeta = data?.carpeta || null;
     const jobId = data?.jobId || `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-    const parsed = procesarInputUsuario(inputTexto, carpeta || null);
+    const parsed = await procesarInputUsuario(inputTexto, carpeta || null);
 
     if (parsed.error) {
         event.sender.send('stream-ia', `[Error]: ${parsed.error}\n\n`);
