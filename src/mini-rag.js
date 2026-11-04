@@ -247,7 +247,7 @@ export async function recuperarContextoMiniRAG({
     palabrasConsulta.forEach(p => keywordsBuscadas.add(p));
 
     // Palabras con alta relevancia técnica para Spring Boot
-    const terminosClave = ['spring', 'springboot', 'security', 'jpa', 'hibernate', 'jakarta', 'javax', 'properties', 'web', 'mvc', '4.1.1', '2.7', 'migration'];
+    const terminosClave = ['spring', 'springboot', 'security', 'jpa', 'hibernate', 'jakarta', 'javax', 'properties', 'web', 'mvc', 'jms', 'activemq', '4.1.1', '2.7', 'migration'];
     terminosClave.forEach(t => {
         if (consulta.toLowerCase().includes(t)) keywordsBuscadas.add(t);
     });
@@ -318,13 +318,13 @@ export async function recuperarContextoMiniRAG({
         return { contexto: '', chunksUsados: [], info: null };
     }
 
-    // 6. Formatear bloque de contexto para Qwen
+    // 6. Formatear bloque de contexto para el LLM
     let contexto = `=== MINI RAG: REGLAS Y CAMBIOS DE MIGRACIÓN EXACTOS (${tokensAcumulados} tokens) ===\n`;
     if (pomData && pomData.versionParent) {
-        contexto += `[Detectado en pom.xml]: Spring Boot v${pomData.versionParent} (Java: ${pomData.javaVersion || '11/8 EoL'})\n`;
-        contexto += `[Starters activos]: ${pomData.starters.join(', ')}\n\n`;
+        contexto += `[Detectado en pom.xml]: Spring Boot v${pomData.versionParent} (Java: ${pomData.javaVersion || '17'})\n`;
+        contexto += `[Starters activos en el proyecto]: ${pomData.starters.join(', ')}\n\n`;
     }
-    contexto += `INSTRUCCIÓN CRÍTICA DE MIGRACIÓN: Aplica estrictamente estas directrices técnicas de versión superior (evita APIs viejas):\n\n`;
+    contexto += `INSTRUCCIÓN CRÍTICA: Aplica estas directrices EXCLUSIVAMENTE a las tecnologías que estén presentes en el proyecto (no inventes dependencias ni frameworks no listados):\n\n`;
 
     for (const sel of seleccionados) {
         contexto += `--- [${sel.titulo}] ---\n${sel.contenido}\n\n`;
